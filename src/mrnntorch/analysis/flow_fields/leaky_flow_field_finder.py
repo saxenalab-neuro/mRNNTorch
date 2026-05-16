@@ -85,6 +85,7 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
         input: torch.Tensor,
         stim_input: torch.Tensor | None = None,
         W: torch.Tensor | None = None,
+        x_is_h: bool = False,
     ) -> list:
         """Compute nonlinear 2D flow fields in a region subspace along a trajectory.
 
@@ -95,14 +96,13 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
 
         Args:
             states (torch.Tensor): Hidden activations over time [batch_size, T, N].
-            inp (torch.Tensor): External input sequence.
-            stim_input (torch.Tensor | None): Optional additive stimulus input.
-            W (torch.Tensor | None): Optional weight matrix to use.
+            input (torch.Tensor): External input sequence.
 
         Kwargs:
             stim_input (torch.Tensor): tensor input to network without weights, acts as manipulation
             W (torch.Tensor): replace the weight matrix of mRNN with W
-            traj_to_reduce (torch.Tensor): tensor similar to states that will be used for PCA instead of states
+            x_is_h (bool): whether to assume x=h, this will give an approximation of \
+                the flow field in h by assuming they are equal
 
         Returns:
             list: FlowField object per sampled time.
@@ -184,11 +184,11 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
 
             # here is where we will invert the grid to get valid xs
             x_0_flow = grid_flow
-            h_0_flow = self.rnn.activation(x_0_flow)
+            h_0_flow = x_0_flow if x_is_h else self.rnn.activation(x_0_flow)
 
             with torch.no_grad():
                 # Get activity for current timestep
-                x_next, _ = self.rnn(
+                x_next, h_next = self.rnn(
                     full_input_batch.unsqueeze(self.time_dim),
                     x_0_flow,
                     h_0_flow,
@@ -197,7 +197,11 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
                     W_rec=W,
                 )
 
-            next_state = self.rnn.get_region_activity(x_next, *self.region_list)
+            if x_is_h:
+                next_state = self.rnn.get_region_activity(h_next, *self.region_list)
+            else:
+                next_state = self.rnn.get_region_activity(x_next, *self.region_list)
+
             next_state_reduced = self._reduce_traj(next_state)
 
             x_vel, y_vel = self._compute_velocity(next_state_reduced, low_dim_grid)
