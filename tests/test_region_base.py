@@ -21,7 +21,6 @@ def test_add_recurrent_region():
         "sign": "pos",
         "base_firing": 1,
         "init": 1,
-        "device": "cpu",
         "parent_region": "reg",
         "learnable_bias": True,
     }
@@ -38,7 +37,7 @@ def test_add_recurrent_region():
 def test_add_input_region():
     """Adding an input region updates input registry and unit count."""
     mrnn = mRNN(device="cpu")
-    mrnn.add_input_region(name="inp", num_units=3, sign="neg", device="cpu")
+    mrnn.add_input_region(name="inp", num_units=3, sign="neg")
     assert "inp" in mrnn.inp_dict
     assert mrnn.total_num_inputs == 3
 

@@ -70,6 +70,7 @@ class ElmanmRNN(mRNNBase):
             config_finalize,
             device,
         )
+        self.alpha = 1
 
     def batched_initial_condition(
         self, batch_size: int
