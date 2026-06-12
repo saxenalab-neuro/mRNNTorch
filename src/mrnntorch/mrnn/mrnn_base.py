@@ -31,6 +31,7 @@ DEFAULTS_MRNN = {
     "spectral_radius": None,
     "config_finalize": True,
     "device": "cuda",
+    "resevoir": False,
 }
 
 
@@ -51,6 +52,7 @@ class mRNNBase(nn.Module):
         spectral_radius: float = DEFAULTS_MRNN["spectral_radius"],
         config_finalize: bool = DEFAULTS_MRNN["config_finalize"],
         device: str = DEFAULTS_MRNN["device"],
+        resevoir: bool = DEFAULTS_MRNN["resevoir"],
     ):
         super(mRNNBase, self).__init__()
         """
@@ -85,6 +87,8 @@ class mRNNBase(nn.Module):
             config_finalize (bool): If True and a config is supplied, finalize
                 connectivity after reading config. Default: True.
             device (str): Torch device string (e.g., "cpu" or "cuda"). Default: "cuda".
+            resevoir (bool): If True, keep recurrent weights in the state dict but
+                freeze them during training. Input weights remain trainable.
         """
 
         # Initialize network parameters
@@ -100,6 +104,7 @@ class mRNNBase(nn.Module):
         self.activation_name = activation
         self.spectral_radius = spectral_radius
         self.config_finalize = config_finalize
+        self.resevoir = resevoir
         self.rec_finalized = False
         self.inp_finalized = False
 
@@ -453,7 +458,7 @@ class mRNNBase(nn.Module):
                 W_rec_tmp = W_rec * W_rec_mask
             W_rec = self.set_spectral_radius(W_rec, W_tmp=W_rec_tmp)
         # Create parameters
-        self.W_rec = nn.Parameter(W_rec)
+        self.W_rec = nn.Parameter(W_rec, requires_grad=not self.resevoir)
         self.W_rec_mask = nn.Parameter(W_rec_mask, requires_grad=False)
         self.W_rec_sign_matrix = nn.Parameter(W_rec_sign_matrix, requires_grad=False)
         # Set finalized flag to true, no more connections can be added

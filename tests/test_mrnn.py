@@ -155,3 +155,42 @@ def test_forward_shapes_without_noise_simultaneous():
     # Outputs should mirror [B, T, H] layout under batch_first=True.
     assert xs.shape == (batch_size, seq_len, 3)
     assert hs.shape == (batch_size, seq_len, 3)
+
+
+def test_resevoir_freezes_recurrent_weights_after_optimizer_step():
+    """Reservoir mode should keep W_rec fixed while other weights train."""
+    torch.manual_seed(0)
+    mrnn = mRNN(
+        activation="linear",
+        device="cpu",
+        rec_constrained=False,
+        inp_constrained=False,
+        resevoir=True,
+    )
+    mrnn.add_recurrent_region(
+        name="r1", num_units=2, sign="pos", base_firing=0, init=0, device="cpu"
+    )
+    mrnn.add_input_region(name="i1", num_units=2, sign="pos", device="cpu")
+    mrnn.add_recurrent_connection("r1", "r1")
+    mrnn.add_input_connection("i1", "r1")
+    mrnn.finalize_connectivity()
+
+    assert mrnn.W_rec.requires_grad is False
+    assert mrnn.W_inp.requires_grad is True
+    assert "W_rec" in mrnn.state_dict()
+
+    optimizer = torch.optim.SGD(mrnn.parameters(), lr=0.1)
+    W_rec_before = mrnn.W_rec.detach().clone()
+    W_inp_before = mrnn.W_inp.detach().clone()
+
+    inp = torch.ones(3, 4, 2)
+    x0 = torch.ones(3, 2)
+    h0 = torch.ones(3, 2)
+    _, hs = mrnn(inp, x0, h0, noise=False)
+    loss = hs.pow(2).sum()
+    loss.backward()
+    optimizer.step()
+
+    assert mrnn.W_rec.grad is None
+    assert torch.allclose(mrnn.W_rec, W_rec_before)
+    assert not torch.allclose(mrnn.W_inp, W_inp_before)

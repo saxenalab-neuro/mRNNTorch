@@ -20,6 +20,7 @@ DEFAULTS_MRNN = {
     "spectral_radius": None,
     "config_finalize": True,
     "device": "cuda",
+    "resevoir": False,
 }
 
 
@@ -43,6 +44,7 @@ class ElmanmRNN(mRNNBase):
         spectral_radius: float = DEFAULTS_MRNN["spectral_radius"],
         config_finalize: bool = DEFAULTS_MRNN["config_finalize"],
         device: str = DEFAULTS_MRNN["device"],
+        resevoir: bool = DEFAULTS_MRNN["resevoir"],
     ):
         """Initialize an Elman-style multi-regional RNN.
 
@@ -57,6 +59,7 @@ class ElmanmRNN(mRNNBase):
             spectral_radius (float | None): Optional recurrent spectral-radius target.
             config_finalize (bool): Whether to finalize connectivity after config load.
             device (str): Torch device string.
+            resevoir (bool): If True, freeze recurrent weights during training.
         """
         super(ElmanmRNN, self).__init__(
             config,
@@ -69,6 +72,7 @@ class ElmanmRNN(mRNNBase):
             spectral_radius,
             config_finalize,
             device,
+            resevoir=resevoir,
         )
 
     def batched_initial_condition(

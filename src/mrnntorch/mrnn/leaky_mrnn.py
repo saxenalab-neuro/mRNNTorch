@@ -21,6 +21,7 @@ DEFAULTS_MRNN = {
     "config_finalize": True,
     "device": "cuda",
     "dt": 10,
+    "resevoir": False,
     "tau": 100,
 }
 
@@ -47,6 +48,7 @@ class mRNN(mRNNBase):
         device: str = DEFAULTS_MRNN["device"],
         dt: float = DEFAULTS_MRNN["dt"],
         tau: float = DEFAULTS_MRNN["tau"],
+        resevoir: bool = DEFAULTS_MRNN["resevoir"],
     ):
         """Initialize a leaky multi-regional RNN.
 
@@ -63,6 +65,7 @@ class mRNN(mRNNBase):
             device (str): Torch device string.
             dt (float): Discretization step.
             tau (float): Time constant.
+            resevoir (bool): If True, freeze recurrent weights during training.
         """
         super(mRNN, self).__init__(
             config,
@@ -75,6 +78,7 @@ class mRNN(mRNNBase):
             spectral_radius,
             config_finalize,
             device,
+            resevoir=resevoir,
         )
         self.dt = dt
         self.tau = tau
