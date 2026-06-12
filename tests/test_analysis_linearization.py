@@ -21,10 +21,10 @@ def _build_leaky_mrnn(activation="relu") -> mRNN:
         activation=activation,
     )
     mrnn.add_recurrent_region(
-        name="r1", num_units=2, sign="pos", base_firing=0, init=0, device="cpu"
+        name="r1", num_units=2, sign="pos", base_firing=0, init=0
     )
     mrnn.add_recurrent_region(
-        name="r2", num_units=1, sign="pos", base_firing=0, init=0, device="cpu"
+        name="r2", num_units=1, sign="pos", base_firing=0, init=0
     )
     return mrnn
 
@@ -32,7 +32,7 @@ def _build_leaky_mrnn(activation="relu") -> mRNN:
 def _build_leaky_mrnn_with_inputs(activation="relu") -> mRNN:
     """Construct a minimal mRNN with input connectivity for flow calls."""
     mrnn = _build_leaky_mrnn(activation=activation)
-    mrnn.add_input_region(name="i1", num_units=1, sign="pos", device="cpu")
+    mrnn.add_input_region(name="i1", num_units=1, sign="pos")
     mrnn.add_recurrent_connection("r1", "r1")
     mrnn.add_recurrent_connection("r1", "r2")
     mrnn.add_recurrent_connection("r2", "r1")
@@ -52,10 +52,10 @@ def _build_elman_mrnn(activation="relu") -> ElmanmRNN:
         activation=activation,
     )
     mrnn.add_recurrent_region(
-        name="r1", num_units=2, sign="pos", base_firing=0, init=0, device="cpu"
+        name="r1", num_units=2, sign="pos", base_firing=0, init=0
     )
     mrnn.add_recurrent_region(
-        name="r2", num_units=1, sign="pos", base_firing=0, init=0, device="cpu"
+        name="r2", num_units=1, sign="pos", base_firing=0, init=0
     )
     return mrnn
 
@@ -63,7 +63,7 @@ def _build_elman_mrnn(activation="relu") -> ElmanmRNN:
 def _build_elman_mrnn_with_inputs(activation="relu") -> ElmanmRNN:
     """Construct a minimal mRNN with input connectivity for flow calls."""
     mrnn = _build_elman_mrnn(activation=activation)
-    mrnn.add_input_region(name="i1", num_units=1, sign="pos", device="cpu")
+    mrnn.add_input_region(name="i1", num_units=1, sign="pos")
     mrnn.add_recurrent_connection("r1", "r1")
     mrnn.add_recurrent_connection("r1", "r2")
     mrnn.add_recurrent_connection("r2", "r1")

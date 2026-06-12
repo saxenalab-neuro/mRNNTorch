@@ -173,7 +173,6 @@ class mRNNBase(nn.Module):
                         sign=region["sign"],
                         base_firing=region["base_firing"],
                         init=region["init"],
-                        device=self.device,
                         parent_region=region["parent_region"],
                         learnable_bias=region["learnable_bias"],
                     )
@@ -185,7 +184,6 @@ class mRNNBase(nn.Module):
                         name=region["name"],
                         num_units=region["num_units"],
                         sign=region["sign"],
-                        device=self.device,
                     )
 
             # Now checking whether or not connections are specified in config
@@ -268,7 +266,6 @@ class mRNNBase(nn.Module):
         sign: str = DEFAULT_REC_REGIONS["sign"],
         base_firing: float = DEFAULT_REC_REGIONS["base_firing"],
         init: float = DEFAULT_REC_REGIONS["init"],
-        device: str = DEFAULT_REC_REGIONS["device"],
         parent_region: str = DEFAULT_REC_REGIONS["parent_region"],
         learnable_bias: bool = DEFAULT_REC_REGIONS["learnable_bias"],
     ):
@@ -280,7 +277,6 @@ class mRNNBase(nn.Module):
             sign (str): "pos" for excitatory or "neg" for inhibitory outputs.
             base_firing (float | torch.Tensor): Baseline firing per unit.
             init (float): Initial pre-activation value for units in this region.
-            device (str): Device where tensors for this region live.
             parent_region (str | None): Optional parent region identifier.
             learnable_bias (bool): If True, baseline firing is trainable.
         """
@@ -296,7 +292,7 @@ class mRNNBase(nn.Module):
             base_firing=base_firing,
             init=init,
             sign=sign,
-            device=device,
+            device=self.device,
             parent_region=parent_region,
             learnable_bias=learnable_bias,
         )
@@ -313,7 +309,6 @@ class mRNNBase(nn.Module):
         name: str,
         num_units: int,
         sign: str = DEFAULT_REGION_BASE["sign"],
-        device: str = DEFAULT_REGION_BASE["device"],
     ):
         """Add an input region to the network.
 
@@ -321,7 +316,6 @@ class mRNNBase(nn.Module):
             name (str): Input region name (unique key).
             num_units (int): Number of input channels in this region.
             sign (str): "pos" or "neg"; used to set sign mask for inputs.
-            device (str): Device where tensors for this region live.
         """
         if self.inp_finalized:
             raise Exception(
@@ -330,7 +324,9 @@ class mRNNBase(nn.Module):
             )
 
         # Create region
-        self.inp_dict[name] = InputRegion(num_units=num_units, sign=sign, device=device)
+        self.inp_dict[name] = InputRegion(
+            num_units=num_units, sign=sign, device=self.device
+        )
         # Update number of input units
         self.total_num_inputs = self._get_total_num_units(self.inp_dict)
 
@@ -937,7 +933,7 @@ class mRNNBase(nn.Module):
         )
         return perturb_hid
 
-    def _inp_noise(self, batch_shape):
+    def _inp_noise(self, batch_shape: int):
         """
         Gather a random noise sample at a given timepoint
 

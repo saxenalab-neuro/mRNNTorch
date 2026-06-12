@@ -15,9 +15,9 @@ def _build_leaky_mrnn() -> mRNN:
     """Construct a minimal mRNN with recurrent + input connectivity on CPU."""
     mrnn = mRNN(device="cpu", rec_constrained=False, inp_constrained=False)
     mrnn.add_recurrent_region(
-        name="r1", num_units=1, sign="pos", base_firing=0, init=0, device="cpu"
+        name="r1", num_units=1, sign="pos", base_firing=0, init=0
     )
-    mrnn.add_input_region(name="i1", num_units=1, sign="pos", device="cpu")
+    mrnn.add_input_region(name="i1", num_units=1, sign="pos")
     mrnn.add_recurrent_connection("r1", "r1")
     mrnn.add_input_connection("i1", "r1")
     mrnn.finalize_connectivity()
@@ -28,9 +28,9 @@ def _build_elman_mrnn() -> ElmanmRNN:
     """Construct a minimal mRNN with recurrent + input connectivity on CPU."""
     mrnn = ElmanmRNN(device="cpu", rec_constrained=False, inp_constrained=False)
     mrnn.add_recurrent_region(
-        name="r1", num_units=1, sign="pos", base_firing=0, init=0, device="cpu"
+        name="r1", num_units=1, sign="pos", base_firing=0, init=0
     )
-    mrnn.add_input_region(name="i1", num_units=1, sign="pos", device="cpu")
+    mrnn.add_input_region(name="i1", num_units=1, sign="pos")
     mrnn.add_recurrent_connection("r1", "r1")
     mrnn.add_input_connection("i1", "r1")
     mrnn.finalize_connectivity()

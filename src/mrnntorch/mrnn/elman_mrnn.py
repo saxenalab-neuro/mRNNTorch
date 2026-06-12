@@ -74,6 +74,7 @@ class ElmanmRNN(mRNNBase):
             device,
             resevoir=resevoir,
         )
+        self.alpha = 1
 
     def batched_initial_condition(
         self, batch_size: int

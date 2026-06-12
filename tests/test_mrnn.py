@@ -22,13 +22,9 @@ def test_add_regions_and_indices():
     """Region indices/sizes should reflect insertion order and counts."""
     mrnn = mRNN(device="cpu")
     # Build a simple multi-region network to check indexing.
-    mrnn.add_recurrent_region(
-        name="r1", num_units=2, sign="pos", base_firing=0, init=0, device="cpu"
-    )
-    mrnn.add_recurrent_region(
-        name="r2", num_units=3, sign="neg", base_firing=0, init=0, device="cpu"
-    )
-    mrnn.add_input_region(name="i1", num_units=4, sign="pos", device="cpu")
+    mrnn.add_recurrent_region(name="r1", num_units=2, sign="pos", base_firing=0, init=0)
+    mrnn.add_recurrent_region(name="r2", num_units=3, sign="neg", base_firing=0, init=0)
+    mrnn.add_input_region(name="i1", num_units=4, sign="pos")
 
     # Total sizes should match the sum of units across regions.
     assert mrnn.total_num_units == 5
@@ -45,10 +41,10 @@ def test_get_tonic_inp_concatenates_regions():
     """Tonic input should concatenate per-region baselines in order."""
     mrnn = mRNN(device="cpu")
     mrnn.add_recurrent_region(
-        name="r1", num_units=2, sign="pos", base_firing=0.5, init=0, device="cpu"
+        name="r1", num_units=2, sign="pos", base_firing=0.5, init=0
     )
     mrnn.add_recurrent_region(
-        name="r2", num_units=1, sign="pos", base_firing=1.5, init=0, device="cpu"
+        name="r2", num_units=1, sign="pos", base_firing=1.5, init=0
     )
 
     tonic = mrnn.tonic_inp
@@ -81,12 +77,8 @@ def test_forward_shapes_without_noise_sequentially():
     """Forward pass should respect batch/time dimensions without noise."""
     mrnn = mRNN(device="cpu", rec_constrained=False, inp_constrained=False)
     # Use a tiny network with full connectivity for deterministic shapes.
-    mrnn.add_recurrent_region(
-        name="r1", num_units=2, sign="pos", base_firing=0, init=0, device="cpu"
-    )
-    mrnn.add_recurrent_region(
-        name="r2", num_units=2, sign="neg", base_firing=0, init=0, device="cpu"
-    )
+    mrnn.add_recurrent_region(name="r1", num_units=2, sign="pos", base_firing=0, init=0)
+    mrnn.add_recurrent_region(name="r2", num_units=2, sign="neg", base_firing=0, init=0)
     mrnn.add_recurrent_connection("r1", "r1")
     mrnn.add_recurrent_connection("r1", "r2")
     mrnn.add_recurrent_connection("r2", "r1")
@@ -94,7 +86,7 @@ def test_forward_shapes_without_noise_sequentially():
     mrnn.finalize_rec_connectivity()
     assert mrnn.W_rec.shape == (4, 4)
 
-    mrnn.add_input_region(name="i1", num_units=3, sign="pos", device="cpu")
+    mrnn.add_input_region(name="i1", num_units=3, sign="pos")
     mrnn.add_input_connection("i1", "r1")
     mrnn.add_input_connection("i1", "r2")
     mrnn.finalize_inp_connectivity()
@@ -115,12 +107,8 @@ def test_forward_shapes_without_noise_simultaneous():
     """Forward pass should respect batch/time dimensions without noise."""
     mrnn = mRNN(device="cpu", rec_constrained=False, inp_constrained=False)
     # Use a tiny network with full connectivity for deterministic shapes.
-    mrnn.add_recurrent_region(
-        name="r1", num_units=2, sign="pos", base_firing=0, init=0, device="cpu"
-    )
-    mrnn.add_recurrent_region(
-        name="r2", num_units=1, sign="neg", base_firing=0, init=0, device="cpu"
-    )
+    mrnn.add_recurrent_region(name="r1", num_units=2, sign="pos", base_firing=0, init=0)
+    mrnn.add_recurrent_region(name="r2", num_units=1, sign="neg", base_firing=0, init=0)
 
     assert mrnn.region_dict["r1"].num_units == 2
     assert mrnn.region_dict["r2"].num_units == 1
@@ -129,7 +117,7 @@ def test_forward_shapes_without_noise_simultaneous():
     mrnn.add_recurrent_connection("r1", "r2")
     mrnn.add_recurrent_connection("r2", "r1")
     mrnn.add_recurrent_connection("r2", "r2")
-    mrnn.add_input_region(name="i1", num_units=3, sign="pos", device="cpu")
+    mrnn.add_input_region(name="i1", num_units=3, sign="pos")
     mrnn.add_input_connection("i1", "r1")
     mrnn.add_input_connection("i1", "r2")
 

@@ -27,11 +27,18 @@ class RecurrentRegion(Region):
         """
         super(RecurrentRegion, self).__init__(num_units, sign=sign, device=device)
 
-        self.init = init * torch.ones(size=(self.num_units,))
+        self.init = torch.as_tensor(init, device=self.device) * torch.ones(
+            size=(self.num_units,), device=self.device
+        )
         self.learnable_bias = learnable_bias
         self.parent_region = parent_region
+        base_firing = torch.as_tensor(base_firing, device=self.device)
 
         if learnable_bias is True:
-            self.base_firing = nn.Parameter(base_firing * torch.ones(size=(num_units,)))
+            self.base_firing = nn.Parameter(
+                base_firing * torch.ones(size=(num_units,), device=self.device)
+            )
         else:
-            self.base_firing = base_firing * torch.ones(size=(num_units,))
+            self.base_firing = base_firing * torch.ones(
+                size=(num_units,), device=self.device
+            )
