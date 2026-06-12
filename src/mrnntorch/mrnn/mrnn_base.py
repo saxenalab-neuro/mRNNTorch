@@ -334,7 +334,7 @@ class mRNNBase(nn.Module):
         self,
         src_region: str,
         dst_region: str,
-        sparsity: float = DEFAULT_CONNECTIONS["sparsity"],
+        sparsity: float | None = DEFAULT_CONNECTIONS["sparsity"],
     ):
         """Create a recurrent connection from one region to another.
 
