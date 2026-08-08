@@ -8,27 +8,16 @@ from mrnntorch.mrnn.elman_mrnn import ElmanmRNN
 class emFlowFieldFinder(FlowFieldFinderBase[ElmanmRNN]):
     """Flow-field estimator for Elman mRNN trajectories and local linearizations."""
 
-    _default_hps = {
-        "num_components": 2,
-        "num_points": 50,
-        "x_offset": 1,
-        "y_offset": 1,
-        "center": 0,
-        "cancel_other_regions": False,
-        "follow_traj": False,
-        "name": "run",
-        "dtype": torch.float32,
-    }
-
     def __init__(
         self,
         rnn: ElmanmRNN,
-        fit_states: torch.Tensor,
         num_points: int,
         x_offset: int,
         y_offset: int,
         x_center: int = 0,
         y_center: int = 0,
+        fit_states: torch.Tensor | None = None,
+        axes: torch.Tensor | None = None,
         follow_traj: bool = False,
         region_list: list = [],
         cancel_other_regions: bool = False,
@@ -49,13 +38,7 @@ class emFlowFieldFinder(FlowFieldFinderBase[ElmanmRNN]):
             cancel_other_regions (bool): If ``True``, zero activity in excluded regions.
         """
         super().__init__(
-            rnn,
-            fit_states,
-            num_points,
-            x_offset,
-            y_offset,
-            x_center,
-            y_center,
+            rnn, num_points, x_offset, y_offset, x_center, y_center, fit_states, axes
         )
 
         # Unload mrnn specific kwargs

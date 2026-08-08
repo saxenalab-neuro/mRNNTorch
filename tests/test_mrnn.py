@@ -155,10 +155,8 @@ def test_resevoir_freezes_recurrent_weights_after_optimizer_step():
         inp_constrained=False,
         resevoir=True,
     )
-    mrnn.add_recurrent_region(
-        name="r1", num_units=2, sign="pos", base_firing=0, init=0, device="cpu"
-    )
-    mrnn.add_input_region(name="i1", num_units=2, sign="pos", device="cpu")
+    mrnn.add_recurrent_region(name="r1", num_units=2, sign="pos", base_firing=0, init=0)
+    mrnn.add_input_region(name="i1", num_units=2, sign="pos")
     mrnn.add_recurrent_connection("r1", "r1")
     mrnn.add_input_connection("i1", "r1")
     mrnn.finalize_connectivity()
