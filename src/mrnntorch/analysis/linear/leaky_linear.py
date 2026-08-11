@@ -48,6 +48,7 @@ class mLinearization:
         delta_state_static: torch.Tensor | None = None,
         h: torch.Tensor | None = None,
         dh: bool = False,
+        alpha_scaling: bool = False,
     ) -> torch.Tensor:
         """Alias for :meth:`forward`."""
         return self.forward(
@@ -58,6 +59,7 @@ class mLinearization:
             delta_state_static=delta_state_static,
             h=h,
             dh=dh,
+            alpha_scaling=alpha_scaling,
         )
 
     def forward(
@@ -69,6 +71,7 @@ class mLinearization:
         delta_state_static: torch.Tensor | None = None,
         h: torch.Tensor | None = None,
         dh: bool = False,
+        alpha_scaling: bool = False,
     ) -> torch.Tensor:
         """Evaluate the first-order Taylor approximation of the leaky dynamics.
 
@@ -84,6 +87,7 @@ class mLinearization:
                 regions when only a subset of regions is linearized.
             dh (bool): If ``True``, linearize the hidden activation update instead \
                 of the pre-activation update.
+            alpha_scaling (bool): Passed to :meth:`jacobian`.
 
         Returns:
             torch.Tensor: Linearized next state in the requested coordinates.
@@ -101,11 +105,18 @@ class mLinearization:
             delta_state = delta_state.flatten(start_dim=0, end_dim=-2)
 
         # Get jacobians for included regions
-        _jacobian, _jacobian_inp = self.jacobian(input, x, h=h, dh=dh)
+        _jacobian, _jacobian_inp = self.jacobian(
+            input, x, h=h, dh=dh, alpha_scaling=alpha_scaling
+        )
         if len(self.static_region_list) >= 1:
             # Get jacobians for excluded regions if available
             _jacobian_exc, _ = self.jacobian(
-                input, x, excluded_regions=True, h=h, dh=dh
+                input,
+                x,
+                excluded_regions=True,
+                h=h,
+                dh=dh,
+                alpha_scaling=alpha_scaling,
             )
         else:
             _jacobian_exc = None
@@ -146,6 +157,7 @@ class mLinearization:
         excluded_regions: bool = False,
         h: torch.Tensor | None = None,
         dh: bool = False,
+        alpha_scaling: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Return Jacobians of the leaky update with respect to state and input.
 
@@ -208,6 +220,10 @@ class mLinearization:
         # Squeeze values now to get proper weight subsets
         _jacobian = self._jac_nxd(_jacobian)
         _jacobian_input = self._jac_nxd(_jacobian_input)
+
+        if alpha_scaling:
+            _jacobian /= self.rnn.alpha
+            _jacobian_input /= self.rnn.alpha
 
         if excluded_regions and len(self.static_region_list) >= 1:
             excluded_to_included = []

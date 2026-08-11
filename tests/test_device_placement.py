@@ -10,11 +10,11 @@ from mrnntorch.mrnn.leaky_mrnn import mRNN
 DEVICE_PARAMS = [
     pytest.param("cpu", id="cpu"),
     pytest.param(
-        "cuda",
+        "cuda:0",
         marks=pytest.mark.skipif(
             not torch.cuda.is_available(), reason="CUDA is not available"
         ),
-        id="cuda",
+        id="cuda:0",
     ),
 ]
 
