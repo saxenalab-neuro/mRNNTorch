@@ -221,7 +221,7 @@ class mLinearization:
         _jacobian = self._jac_nxd(_jacobian)
         _jacobian_input = self._jac_nxd(_jacobian_input)
 
-        if alpha_scaling:
+        if dh and not alpha_scaling:
             _jacobian /= self.rnn.alpha
             _jacobian_input /= self.rnn.alpha
 
@@ -261,6 +261,7 @@ class mLinearization:
         x: torch.Tensor,
         h: torch.Tensor | None = None,
         dh: bool = False,
+        alpha_scaling: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute the eigendecomposition of the local Jacobian.
 
@@ -275,7 +276,7 @@ class mLinearization:
             torch.Tensor: Imag parts of eigenvalues.
             torch.Tensor: Eigenvectors stacked column-wise.
         """
-        _jacobian, _ = self.jacobian(input, x, h=h, dh=dh)
+        _jacobian, _ = self.jacobian(input, x, h=h, dh=dh, alpha_scaling=alpha_scaling)
         eigenvalues, eigenvectors = torch.linalg.eig(_jacobian)
 
         # Split real and imaginary parts

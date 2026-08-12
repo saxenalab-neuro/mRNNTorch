@@ -125,8 +125,8 @@ def test_jacobian_matches_weight_h_l():
     x_next = x_next.squeeze()
     dx = torch.where(x_next > 0, 1.0, 0.0)
     jac, jac_inp = lin.jacobian(inp, x, h=h, dh=True)
-    assert torch.allclose(jac, torch.diag(dx) @ (mrnn.alpha * mrnn.W_rec))
-    assert torch.allclose(jac_inp, torch.diag(dx) @ (mrnn.alpha * mrnn.W_inp))
+    assert torch.allclose(jac, torch.diag(dx) @ (mrnn.W_rec))
+    assert torch.allclose(jac_inp, torch.diag(dx) @ (mrnn.W_inp))
 
 
 def test_jacobian_matches_weight_h_r1_l():
@@ -142,9 +142,9 @@ def test_jacobian_matches_weight_h_r1_l():
     jac, jac_inp = lin.jacobian(inp, x, h=h, dh=True)
     assert torch.allclose(
         jac,
-        mrnn.get_weight_subset("r1", W=torch.diag(dx) @ (mrnn.alpha * mrnn.W_rec)),
+        mrnn.get_weight_subset("r1", W=torch.diag(dx) @ (mrnn.W_rec)),
     )
-    assert torch.allclose(jac_inp, (torch.diag(dx) @ (mrnn.alpha * mrnn.W_inp))[:2, :])
+    assert torch.allclose(jac_inp, (torch.diag(dx) @ (mrnn.W_inp))[:2, :])
 
 
 def test_jacobian_matches_weight_h_r2_l():
@@ -157,12 +157,12 @@ def test_jacobian_matches_weight_h_r2_l():
     x_next, _ = mrnn(inp.unsqueeze(0).unsqueeze(0), x.unsqueeze(0))
     x_next = x_next.squeeze()
     dx = torch.where(x_next > 0, 1.0, 0.0)
-    jac, jac_inp = lin.jacobian(inp, x, h=h, dh=True, alpha_scaling=True)
+    jac, jac_inp = lin.jacobian(inp, x, h=h, dh=True)
     assert torch.allclose(
         jac,
-        mrnn.get_weight_subset("r2", W=torch.diag(dx) @ (mrnn.W_rec)),
+        mrnn.get_weight_subset("r2", W=torch.diag(dx) @ (mrnn.alpha * mrnn.W_rec)),
     )
-    assert torch.allclose(jac_inp, (torch.diag(dx) @ (mrnn.W_inp))[2:, :])
+    assert torch.allclose(jac_inp, (torch.diag(dx) @ (mrnn.alpha * mrnn.W_inp))[2:, :])
 
 
 def test_eigendecomposition_returns_real_imag_parts_l():
