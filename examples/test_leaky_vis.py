@@ -1,21 +1,21 @@
-"""Visualize a two-region Elman mRNN with simple attractor dynamics.
+"""Visualize a two-region leaky mRNN with simple attractor dynamics.
 
-The ``line`` region is an identity map, so its two coordinates form a line
-attractor.  The ``point`` region is driven to the origin.  Cross-region
+The ``line`` region has one neutral mode and one contracting mode under the
+leaky update.  The ``point`` region is driven to the origin.  Cross-region
 connections are randomized because they are not part of this demonstration.
 """
 
 import torch
 
-from mrnntorch import ElmanmRNN
-from mrnntorch.analysis.flow_visualizer.elman_visualizer import emFlowFieldVisualizer
+from mrnntorch import mRNN
+from mrnntorch.analysis.flow_visualizer.leaky_visualizer import mFlowFieldVisualizer
 
 
-def build_network(seed: int = 7) -> ElmanmRNN:
-    """Construct the two-region network and install the desired weights."""
+def build_network(seed: int = 7) -> mRNN:
+    """Construct the two-region leaky network and install the desired weights."""
     torch.manual_seed(seed)
 
-    rnn = ElmanmRNN(
+    rnn = mRNN(
         activation="linear",
         device="cpu",
         noise_level_act=0.0,
@@ -34,15 +34,14 @@ def build_network(seed: int = 7) -> ElmanmRNN:
     rnn.add_input_connection("static", "point")
     rnn.finalize_connectivity()
 
-    # W_rec is arranged as [destination units, source units].
+    # W_rec is arranged as [destination units, source units]. With linear
+    # activation, W_rec eigenvalue 1 gives a neutral mode for the leaky update.
     with torch.no_grad():
         rnn.W_rec.zero_()
-        # One neutral direction and one contracting direction: a line
-        # attractor embedded in the two-neuron region.
         rnn.W_rec[:2, :2] = torch.diag(torch.tensor([1.0, 0.5]))
         rnn.W_rec[:2, 2:] = 0.05 * torch.randn(2, 2)
         rnn.W_rec[2:, :2] = 0.05 * torch.randn(2, 2)
-        # The zero block for point -> point makes the origin a discrete attractor.
+        # The zero block for point -> point makes the origin an attractor.
 
         rnn.W_inp.zero_()
         rnn.W_inp[0, 0] = 0.05  # constant input integrates along the line
@@ -51,15 +50,16 @@ def build_network(seed: int = 7) -> ElmanmRNN:
 
 
 def gather_trials(
-    rnn: ElmanmRNN, n_trials: int = 12, n_steps: int = 80
+    rnn: mRNN, n_trials: int = 12, n_steps: int = 80
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Run trials with different initial positions and a constant input."""
     initial_line_positions = torch.linspace(-1.0, 1.0, n_trials)
-    h0 = torch.zeros(n_trials, 4)
-    h0[:, 0] = initial_line_positions
+    x0 = torch.zeros(n_trials, 4)
+    x0[:, 0] = initial_line_positions
+    h0 = rnn.activation(x0)
     inputs = torch.full((n_trials, n_steps, 1), 1.0)
-    states = rnn(inputs, h0, noise=False)
-    return inputs, states
+    xs, _ = rnn(inputs, x0, h0, noise=False)
+    return inputs, xs
 
 
 def main() -> None:
@@ -68,9 +68,9 @@ def main() -> None:
     inputs = inputs.detach()
     states = states.detach()
 
-    # Restrict the reduced plane to the line-attractor region.  No delta
-    # inputs are supplied; the visualizer therefore shows the ordinary field.
-    visualizer = emFlowFieldVisualizer(
+    # Restrict the reduced plane to the line-attractor region. The leaky
+    # visualizer consumes x-states by default, matching mFlowFieldFinder.
+    visualizer = mFlowFieldVisualizer(
         rnn,
         num_points=25,
         fit_states=states.reshape(-1, states.shape[-1]),
