@@ -5,5 +5,5 @@ torch
 scikit-learn
 scipy
 matplotlib
-rnntoolkit
+git+https://github.com/saxenalab-neuro/RNNToolkit.git
 pygame
