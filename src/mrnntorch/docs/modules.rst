@@ -1,7 +1,5 @@
-mrnntorch
-=========
+Legacy Module Index
+===================
 
-.. toctree::
-   :maxdepth: 4
-
-    mrnntorch
+This page is kept for compatibility with older generated documentation links.
+Use :doc:`api` for the current API reference.

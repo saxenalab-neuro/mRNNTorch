@@ -1,23 +1,9 @@
-mrnntorch
-=================
+Package Overview
+================
 
-region
------------
 .. toctree::
-  :maxdepth: 1
+   :maxdepth: 1
 
-  mrnntorch.region
-
-analysis
---------
-.. toctree::
-  :maxdepth: 1
-
-  mrnntorch.analysis
-
-mrnn
----------------------
-.. toctree::
-  :maxdepth: 1
-
-  mrnntorch.mrnn
+   mrnntorch.mrnn
+   mrnntorch.region
+   mrnntorch.analysis

@@ -1,5 +1,5 @@
 sphinx>=7
-shibuya
+shibuya>=2026.7.12
 numpy
 torch
 scikit-learn

@@ -1,23 +1,10 @@
-fixed\_points
---------------
+Analysis API
+============
 
 .. toctree::
-  :maxdepth: 1
+   :maxdepth: 1
 
-  mrnntorch.analysis.fixed_points
-
-flow\_fields
---------------
-
-.. toctree::
-  :maxdepth: 1
-
-  mrnntorch.analysis.flow_fields
-
-linear
------------
-
-.. toctree::
-  :maxdepth: 1
-
-  mrnntorch.analysis.linear
+   mrnntorch.analysis.fixed_points
+   mrnntorch.analysis.linear
+   mrnntorch.analysis.flow_fields
+   mrnntorch.analysis.flow_visualizer

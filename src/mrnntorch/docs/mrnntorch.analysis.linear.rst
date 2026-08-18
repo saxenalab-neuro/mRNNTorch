@@ -1,15 +1,16 @@
-elman\_linear
-----------------------------------------------
+Linearization Analysis
+======================
 
-.. automodule:: mrnntorch.analysis.linear.elman_linear
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-leaky\_linear
-----------------------------------------------
+Leaky Linearization
+-------------------
 
 .. automodule:: mrnntorch.analysis.linear.leaky_linear
    :members:
    :show-inheritance:
-   :undoc-members:
+
+Elman Linearization
+-------------------
+
+.. automodule:: mrnntorch.analysis.linear.elman_linear
+   :members:
+   :show-inheritance:
