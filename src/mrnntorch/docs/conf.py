@@ -1,7 +1,5 @@
 # Configuration file for the Sphinx documentation builder.
 
-from importlib.util import find_spec
-
 # -- Project information -----------------------------------------------------
 
 project = "mRNNTorch"
@@ -48,6 +46,6 @@ intersphinx_mapping = {
 
 # -- Options for HTML output -------------------------------------------------
 
-html_theme = "shibuya" if find_spec("shibuya") is not None else "alabaster"
+html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
 html_title = "mRNNTorch Documentation"
