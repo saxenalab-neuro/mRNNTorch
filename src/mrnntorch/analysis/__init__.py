@@ -1,3 +1,5 @@
+"""Analysis utilities for fixed points, flow fields, and local linearization."""
+
 from .fixed_points.elman_fp_finder import emFixedPointFinder
 from .fixed_points.leaky_fp_finder import mFixedPointFinder
 from .flow_fields.elman_flow_field_finder import emFlowFieldFinder

@@ -1,3 +1,5 @@
+"""Fixed-point search utilities for leaky mRNN dynamics."""
+
 import torch
 import numpy as np
 import time
@@ -11,80 +13,30 @@ from mrnntorch.mrnn.leaky_mrnn import mRNN
 class mFixedPointFinder(FixedPointFinderBase[mRNN]):
     """Fixed-point finder specialized for leaky :class:`mRNN` dynamics."""
 
-    _default_hps = {
-        "lr_init": 1e-4,
-        "lr_patience": 5,
-        "lr_factor": 0.95,
-        "lr_cooldown": 0,
-        "tol_q": 1e-12,
-        "tol_dq": 1e-20,
-        "max_iters": 5000,
-        "do_rerun_q_outliers": False,
-        "outlier_q_scale": 10.0,
-        "do_exclude_distance_outliers": True,
-        "outlier_distance_scale": 10.0,
-        "tol_unique": 1e-3,
-        "max_n_unique": np.inf,
-        "dtype": "float32",
-        "random_seed": 0,
-        "verbose": True,
-        "super_verbose": False,
-        "n_iters_per_print_update": 100,
-        "batch_first": True,
-    }
-
-    @classmethod
-    def default_hps(cls):
-        """Returns a deep copy of the default hyperparameters dict.
-
-        The deep copy protects against external updates to the defaults, which
-        in turn protects against unintended interactions with the hashing done
-        by the Hyperparameters class.
-
-        Args:
-            None.
-
-        Returns:
-            dict of hyperparameters.
-
-
-        """
-        return deepcopy(cls._default_hps)
-    
-    # TODO similar to linear and flow fields, add *args in init instead of overloaded function
-
     def __init__(
         self,
         rnn: mRNN,
-        lr_init: float = _default_hps["lr_init"],
-        lr_patience: float = _default_hps["lr_patience"],
-        lr_factor: float = _default_hps["lr_factor"],
-        lr_cooldown: float = _default_hps["lr_cooldown"],
-        tol_q: float = _default_hps["tol_q"],
-        tol_dq: float = _default_hps["tol_dq"],
-        max_iters: int = _default_hps["max_iters"],
-        do_rerun_q_outliers: bool = _default_hps["do_rerun_q_outliers"],
-        outlier_q_scale: float = _default_hps["outlier_q_scale"],
-        do_exclude_distance_outliers: bool = _default_hps[
-            "do_exclude_distance_outliers"
-        ],
-        outlier_distance_scale: float = _default_hps["outlier_distance_scale"],
-        tol_unique: float = _default_hps["tol_unique"],
-        max_n_unique: int = _default_hps["max_n_unique"],
-        dtype: str = _default_hps["dtype"],
-        random_seed: int = _default_hps["random_seed"],
-        verbose: bool = _default_hps["verbose"],
-        super_verbose: bool = _default_hps["super_verbose"],
-        n_iters_per_print_update: int = _default_hps["n_iters_per_print_update"],
+        lr_init: float = 1e-4,
+        tol_q: float = 1e-12,
+        tol_dq: float = 1e-20,
+        max_iters: int = 5000,
+        do_rerun_q_outliers: bool = False,
+        outlier_q_scale: float = 10.0,
+        do_exclude_distance_outliers: bool = True,
+        outlier_distance_scale: float = 10.0,
+        tol_unique: float = 1e-3,
+        max_n_unique: int | float = np.inf,
+        dtype: str = "float32",
+        random_seed: int = 0,
+        verbose: bool = True,
+        super_verbose: bool = False,
+        n_iters_per_print_update: int = 100,
     ):
         """Initialize fixed-point search hyperparameters for a leaky mRNN.
 
         Args:
             rnn (mRNN): Network whose fixed points will be optimized.
             lr_init (float): Initial optimizer learning rate.
-            lr_patience (float): Plateau scheduler patience.
-            lr_factor (float): Plateau scheduler decay factor.
-            lr_cooldown (float): Plateau scheduler cooldown.
             tol_q (float): Absolute fixed-point objective tolerance.
             tol_dq (float): Per-step objective improvement tolerance.
             max_iters (int): Maximum optimization iterations.
@@ -117,9 +69,6 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
         # *********************************************************************
 
         self.lr_init = lr_init
-        self.lr_patience = lr_patience
-        self.lr_factor = lr_factor
-        self.lr_cooldown = lr_cooldown
         self.tol_q = tol_q
         self.tol_dq = tol_dq
         self.max_iters = max_iters
@@ -136,6 +85,47 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
     # *************************************************************************
     # Primary exposed functions ***********************************************
     # *************************************************************************
+
+    def region_initial_states(
+        self,
+        states: torch.Tensor,
+        n_inits: int,
+        *args,
+        noise_scale: float = 0.0,
+        excluded_static_regions: list = [],
+    ):
+        states = self._broadcast_nxd(states, tile_n=1)
+
+        # get included region states
+        included_region_states = self.rnn.get_region_activity(states, *args)
+        included_region_states = self.sample_states(
+            included_region_states, n_inits=n_inits, noise_scale=noise_scale
+        )
+
+        # get static regions states
+        non_static_regions = [*args, *excluded_static_regions]
+        static_regions = self.rnn.get_excluded_hid_regions(*non_static_regions)
+        static_region_states = self.rnn.get_region_activity(states, *static_regions)
+        static_region_states = self.sample_states(
+            static_region_states, n_inits=n_inits, noise_scale=noise_scale
+        )
+
+        # get excluded region states (zeros)
+        excluded_region_size = self.rnn.get_region_sizes(*excluded_static_regions)
+        excluded_region_states = torch.zeros(size=(n_inits, excluded_region_size))
+
+        # combine all states in correct order
+        included_static_states = self.rnn.combine_states(
+            included_region_states, static_region_states, list(args), static_regions
+        )
+        init_states = self.rnn.combine_states(
+            included_static_states,
+            excluded_region_states,
+            [*args, *static_regions],
+            excluded_static_regions,
+        )
+
+        return init_states
 
     def find_fixed_points(
         self,
@@ -195,7 +185,7 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
         if optimize_h:
             # If optimization is performed on h, get unique using Fxstar
             # this is because Fxstar is h_next, so unique will be performed on activation
-            # This is a workaround, however keeping xstar as x is good for 
+            # This is a workaround, however keeping xstar as x is good for
             # when a user might want to pass the fixed point to the mrnn again (i.e. during linearization)
             unique_fps = all_fps.get_unique(use_F_xstar=True)
         else:
@@ -420,10 +410,6 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
             [region_tensor_list[idx] for idx in region_to_opt_idx], lr=self.lr_init
         )
 
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", factor=self.lr_factor, patience=self.lr_patience, cooldown=self.lr_cooldown, threshold=1e-10
-        )
-
         iter_count = 1
         iter_learning_rate = init_lr
         t_start = time.time()
@@ -479,9 +465,6 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
             q_scalar.backward()
 
             optimizer.step()
-            scheduler.step(metrics=q_scalar.detach())
-
-            iter_learning_rate = scheduler.state_dict()["_last_lr"][0]
 
             ev_q_b = q_b.detach().cpu()
             ev_dq_b = dq_b.detach().cpu()
@@ -554,50 +537,3 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
             fps, initial_states, self.outlier_distance_scale
         )
         return fps[idx_keep.tolist()]
-
-    def _print_if_verbose(self, *args, **kwargs):
-        """Print only when verbose logging is enabled."""
-        if self.verbose:
-            print(*args, **kwargs)
-
-    @classmethod
-    def _print_iter_update(
-        cls,
-        iter_count: int,
-        t_start: float,
-        q: torch.Tensor,
-        dq: torch.Tensor,
-        lr: float,
-        is_final: bool = False,
-    ):
-        """Print a standardized optimization progress line."""
-        t = time.time()
-        t_elapsed = t - t_start
-        avg_iter_time = t_elapsed / iter_count
-
-        if is_final:
-            delimiter = "\n\t\t"
-            print("\t\t%d iters%s" % (iter_count, delimiter), end="")
-        else:
-            delimiter = ", "
-            print("\tIter: %d%s" % (iter_count, delimiter), end="")
-
-        if q.size == 1:
-            print("q = %.2e%sdq = %.2e%s" % (q, delimiter, dq, delimiter), end="")
-        else:
-            mean_q = torch.mean(q)
-            std_q = torch.std(q)
-
-            mean_dq = torch.mean(dq)
-            std_dq = torch.std(dq)
-
-            print(
-                "q = %.2e +/- %.2e%s"
-                "dq = %.2e +/- %.2e%s"
-                % (mean_q, std_q, delimiter, mean_dq, std_dq, delimiter),
-                end="",
-            )
-
-        print("learning rate = %.2e%s" % (lr, delimiter), end="")
-
-        print("avg iter time = %.2e sec" % avg_iter_time, end="")

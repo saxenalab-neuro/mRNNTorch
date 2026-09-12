@@ -1,3 +1,5 @@
+"""Local Jacobian and eigendecomposition tools for leaky mRNNs."""
+
 import torch
 from mrnntorch.mrnn.leaky_mrnn import mRNN
 from typing import Tuple
@@ -30,7 +32,7 @@ class mLinearization:
         self.region_list = (
             self.rnn.hid_regions
             if not args
-            else [region for region in rnn._ensure_order(*args)]
+            else [region for region in rnn.ensure_order(*args)]
         )
         # Regions treated as static inputs for grid elements
         self.static_region_list = (

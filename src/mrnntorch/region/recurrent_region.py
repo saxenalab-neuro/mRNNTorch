@@ -1,9 +1,19 @@
+"""Recurrent-region definitions for hidden populations in an mRNN."""
+
 import torch
 import torch.nn as nn
 from mrnntorch.region.region_base import Region, DEFAULT_REC_REGIONS
 
 
 class RecurrentRegion(Region):
+    """Hidden recurrent region metadata used to assemble mRNN state space.
+
+    A recurrent region owns its initial condition, tonic/base firing values,
+    optional learnable bias, optional parent-region label, and outgoing
+    connection parameters inherited from :class:`Region`. Instances are usually
+    created through :meth:`mrnntorch.mrnn.mrnn_base.mRNNBase.add_recurrent_region`.
+    """
+
     def __init__(
         self,
         num_units,

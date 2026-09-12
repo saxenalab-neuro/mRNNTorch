@@ -1,3 +1,5 @@
+"""Fixed-point search utilities for Elman mRNN dynamics."""
+
 import torch
 import numpy as np
 import time
@@ -11,69 +13,24 @@ from mrnntorch.mrnn.elman_mrnn import ElmanmRNN
 class emFixedPointFinder(FixedPointFinderBase[ElmanmRNN]):
     """Fixed-point finder specialized for :class:`ElmanmRNN` dynamics."""
 
-    _default_hps = {
-        "lr_init": 1e-4,
-        "lr_patience": 5,
-        "lr_factor": 0.95,
-        "lr_cooldown": 0,
-        "tol_q": 1e-12,
-        "tol_dq": 1e-20,
-        "max_iters": 5000,
-        "do_rerun_q_outliers": False,
-        "outlier_q_scale": 10.0,
-        "do_exclude_distance_outliers": True,
-        "outlier_distance_scale": 10.0,
-        "tol_unique": 1e-3,
-        "max_n_unique": np.inf,
-        "dtype": "float32",
-        "random_seed": 0,
-        "verbose": True,
-        "super_verbose": False,
-        "n_iters_per_print_update": 100,
-        "batch_first": True,
-    }
-
-    @classmethod
-    def default_hps(cls):
-        """Returns a deep copy of the default hyperparameters dict.
-
-        The deep copy protects against external updates to the defaults, which
-        in turn protects against unintended interactions with the hashing done
-        by the Hyperparameters class.
-
-        Args:
-            None.
-
-        Returns:
-            dict of hyperparameters.
-
-
-        """
-        return deepcopy(cls._default_hps)
-
     def __init__(
         self,
         rnn: ElmanmRNN,
-        lr_init: float = _default_hps["lr_init"],
-        lr_patience: float = _default_hps["lr_patience"],
-        lr_factor: float = _default_hps["lr_factor"],
-        lr_cooldown: float = _default_hps["lr_cooldown"],
-        tol_q: float = _default_hps["tol_q"],
-        tol_dq: float = _default_hps["tol_dq"],
-        max_iters: int = _default_hps["max_iters"],
-        do_rerun_q_outliers: bool = _default_hps["do_rerun_q_outliers"],
-        outlier_q_scale: float = _default_hps["outlier_q_scale"],
-        do_exclude_distance_outliers: bool = _default_hps[
-            "do_exclude_distance_outliers"
-        ],
-        outlier_distance_scale: float = _default_hps["outlier_distance_scale"],
-        tol_unique: float = _default_hps["tol_unique"],
-        max_n_unique: int = _default_hps["max_n_unique"],
-        dtype: str = _default_hps["dtype"],
-        random_seed: int = _default_hps["random_seed"],
-        verbose: bool = _default_hps["verbose"],
-        super_verbose: bool = _default_hps["super_verbose"],
-        n_iters_per_print_update: int = _default_hps["n_iters_per_print_update"],
+        lr_init: float = 1e-4,
+        tol_q: float = 1e-12,
+        tol_dq: float = 1e-20,
+        max_iters: int = 5000,
+        do_rerun_q_outliers: bool = False,
+        outlier_q_scale: float = 10.0,
+        do_exclude_distance_outliers: bool = True,
+        outlier_distance_scale: float = 10.0,
+        tol_unique: float = 1e-3,
+        max_n_unique: float = np.inf,
+        dtype: str = "float32",
+        random_seed: int = 0,
+        verbose: bool = True,
+        super_verbose: bool = False,
+        n_iters_per_print_update: int = 100,
     ):
         """Initialize fixed-point search hyperparameters for an Elman mRNN.
 
@@ -115,9 +72,6 @@ class emFixedPointFinder(FixedPointFinderBase[ElmanmRNN]):
         # *********************************************************************
 
         self.lr_init = lr_init
-        self.lr_patience = lr_patience
-        self.lr_factor = lr_factor
-        self.lr_cooldown = lr_cooldown
         self.tol_q = tol_q
         self.tol_dq = tol_dq
         self.max_iters = max_iters
@@ -403,10 +357,6 @@ class emFixedPointFinder(FixedPointFinderBase[ElmanmRNN]):
             [region_tensor_list[idx] for idx in region_to_opt_idx], lr=self.lr_init
         )
 
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", factor=self.lr_factor, patience=self.lr_patience, cooldown=self.lr_cooldown, threshold=1e-10
-        )
-
         iter_count = 1
         iter_learning_rate = init_lr
         t_start = time.time()
@@ -443,9 +393,6 @@ class emFixedPointFinder(FixedPointFinderBase[ElmanmRNN]):
             q_scalar.backward()
 
             optimizer.step()
-            scheduler.step(metrics=q_scalar.detach())
-
-            iter_learning_rate = scheduler.state_dict()["_last_lr"][0]
 
             ev_q_b = q_b.detach().cpu()
             ev_dq_b = dq_b.detach().cpu()

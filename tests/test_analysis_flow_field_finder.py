@@ -157,13 +157,13 @@ def test_flow_field_finder_init_sets_defaults_l():
         x_offset=2,
         y_offset=3,
         fit_states=fit_states,
-        cancel_other_regions=True,
+        excluded_static_regions=[],
         follow_traj=True,
     )
     assert finder.num_points == 5
     assert finder.x_offset == 2
     assert finder.y_offset == 3
-    assert finder.cancel_other_regions is True
+    assert finder.excluded_static_regions == []
     assert finder.follow_traj is True
     assert isinstance(finder.reduce_obj, PCA)
     assert finder.linearization.rnn is mrnn
@@ -263,13 +263,13 @@ def test_flow_field_finder_init_sets_defaults_e():
         x_offset=2,
         y_offset=3,
         fit_states=fit_states,
-        cancel_other_regions=True,
+        excluded_static_regions=[],
         follow_traj=True,
     )
     assert finder.num_points == 5
     assert finder.x_offset == 2
     assert finder.y_offset == 3
-    assert finder.cancel_other_regions is True
+    assert finder.excluded_static_regions == []
     assert finder.follow_traj is True
     assert isinstance(finder.reduce_obj, PCA)
     assert finder.linearization.rnn is mrnn

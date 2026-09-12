@@ -1,3 +1,5 @@
+"""Two-dimensional flow-field estimation for leaky mRNN trajectories."""
+
 import torch
 from mrnntorch.analysis.linear.leaky_linear import mLinearization
 from rnntoolkit.flow_fields.flow_field import FlowField
@@ -20,7 +22,7 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
         axes: torch.Tensor | None = None,
         follow_traj: bool = False,
         region_list: list = [],
-        cancel_other_regions: bool = False,
+        excluded_static_regions: list = [],
     ):
         """Initialize a 2D flow-field finder around a trajectory.
 
@@ -35,14 +37,15 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
             y_center (int): Fixed y-axis center when not following the trajectory.
             follow_traj (bool): If ``True``, center the grid on each sampled state.
             region_list (list): Recurrent regions to include in the reduced plane.
-            cancel_other_regions (bool): If ``True``, zero activity in excluded regions.
+            excluded_static_regions (list): Static regions whose state input is
+                zeroed. Each entry must belong to ``static_region_list``.
         """
         super().__init__(
             rnn, num_points, x_offset, y_offset, x_center, y_center, fit_states, axes
         )
 
         # Unload mrnn specific kwargs
-        self.cancel_other_regions = cancel_other_regions
+        self.excluded_static_regions = excluded_static_regions
         self.follow_traj = follow_traj
 
         self.zero_states = torch.zeros(
@@ -53,13 +56,18 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
         )
 
         # Regions which are treated as grid elements
-        self.region_list = self.rnn.hid_regions if not region_list else region_list
+        self.region_list = (
+            self.rnn.hid_regions
+            if not region_list
+            else list(self.rnn.ensure_order(*region_list))
+        )
         # Regions treated as static inputs for grid elements
         self.static_region_list = (
             []
             if self.region_list == self.rnn.hid_regions
             else self.rnn.get_excluded_hid_regions(*self.region_list)
         )
+        assert set(self.excluded_static_regions) <= set(self.static_region_list)
         self.linearization = mLinearization(rnn, *self.region_list)
 
     def find_nonlinear_flow(
@@ -114,10 +122,13 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
             # Default to dummy tensor with shape
             static_xs = None
         else:
-            static_xs = self.rnn.get_region_activity(xs, *self.static_region_list)
-
-            if self.cancel_other_regions:
-                static_xs = static_xs * torch.zeros_like(static_xs)
+            static_xs = []
+            for static_r in self.static_region_list:
+                static_x = self.rnn.get_region_activity(xs, static_r)
+                if static_r in self.excluded_static_regions:
+                    static_x = static_x * torch.zeros_like(static_x)
+                static_xs.append(static_x)
+            static_xs = torch.cat(static_xs, dim=-1)
 
         # Now going through trajectory
         for n in range(n_states):
@@ -242,10 +253,17 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
         reduced_traj = self._reduce_traj(region_tmp)
 
         # zero out static perturbations if regions are cancelled
-        if self.cancel_other_regions and delta_state_static is not None:
-            delta_state_static = delta_state_static * torch.zeros_like(
-                delta_state_static
-            )
+        if delta_state_static is not None and self.excluded_static_regions:
+            mask = []
+            for static_r in self.static_region_list:
+                n_units = self.rnn.get_region_size(static_r)
+                if static_r in self.excluded_static_regions:
+                    r_mask_cur = torch.zeros(size=(1, n_units))
+                else:
+                    r_mask_cur = torch.ones(size=(1, n_units))
+                mask.append(r_mask_cur)
+            mask = torch.cat(mask, dim=-1)
+            delta_state_static = delta_state_static * mask
 
         for n in range(n_states):
             xs_n = xs[n]

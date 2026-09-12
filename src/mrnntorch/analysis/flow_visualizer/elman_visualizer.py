@@ -1,3 +1,7 @@
+"""Interactive flow-field visualizer for Elman mRNN dynamics."""
+
+from collections.abc import Sequence
+
 import pygame
 import torch
 from mrnntorch.analysis.flow_fields.elman_flow_field_finder import emFlowFieldFinder
@@ -5,20 +9,15 @@ from mrnntorch.mrnn.elman_mrnn import ElmanmRNN
 from rnntoolkit import FlowField
 from rnntoolkit import FlowFieldFinderBase
 from rnntoolkit import FlowFieldVisualizerBase
-from rnntoolkit.flow_visualizer import visualizer_base
+from rnntoolkit.flow_visualizer.axis_selection import AxisSelectionMixin
 from mrnntorch.analysis.flow_visualizer.region_panel import RegionPreferencesPanel
-
-# potentially make it easier to add preferences in future
-visualizer_base.PREFERENCE.setdefault(
-    "cancel_other_regions", {"choices": ("off", "on"), "fmt": str}
-)
 
 pygame.init()
 
 CANVAS_BG = (245, 245, 250)
 
 
-class emFlowFieldVisualizer(FlowFieldVisualizerBase):
+class emFlowFieldVisualizer(AxisSelectionMixin, FlowFieldVisualizerBase):
     """Interactive two-dimensional viewer for an RNN's flow field.
 
     This class asks ``FlowFieldFinder`` to project hidden states and calculate
@@ -39,7 +38,8 @@ class emFlowFieldVisualizer(FlowFieldVisualizerBase):
         axes: torch.Tensor | None = None,
         flow_type: str = "nonlinear",
         region_list: list[str] | None = None,
-        cancel_other_regions: bool = False,
+        excluded_static_regions: list[str] | None = None,
+        axis_labels: Sequence[str] | None = None,
     ) -> None:
         """Initialize an Elman flow-field visualizer.
 
@@ -51,11 +51,14 @@ class emFlowFieldVisualizer(FlowFieldVisualizerBase):
             x_center: Initial x-axis center in reduced coordinates.
             y_center: Initial y-axis center in reduced coordinates.
             fit_states: Full hidden states used to fit the current 2D PCA plane.
-            axes: Optional explicit axes with shape ``[2, total_hidden_units]``.
+            axes: Optional axis bank with shape ``[N, total_hidden_units]``,
+                where ``N >= 2``. The first two axes are initially selected.
             flow_type: Either ``"nonlinear"`` or ``"linear"``.
             region_list: Recurrent regions initially included in the flow plane.
-            cancel_other_regions: Whether excluded recurrent regions are zeroed
-                rather than held at their trajectory values.
+            excluded_static_regions: Static recurrent regions whose state input
+                is zeroed. Every entry must be outside ``region_list``.
+            axis_labels: Optional names for the supplied axes. Its length must
+                match the first dimension of ``axes``.
         """
         pygame.init()
         # FlowFieldVisualizerBase.__init__ builds the finder through the
@@ -63,7 +66,10 @@ class emFlowFieldVisualizer(FlowFieldVisualizerBase):
         # entering the superclass constructor.
         self.available_regions = list(rnn.hid_regions)
         self.region_list = self._normalize_region_list(region_list)
-        self.cancel_other_regions = cancel_other_regions
+        self.excluded_static_regions = self._normalize_excluded_static_regions(
+            excluded_static_regions
+        )
+        selected_axes = self._initialize_axes(axes, axis_labels)
 
         super().__init__(
             rnn,
@@ -73,11 +79,8 @@ class emFlowFieldVisualizer(FlowFieldVisualizerBase):
             x_center,
             y_center,
             fit_states,
-            axes,
+            selected_axes,
             flow_type,
-        )
-        self.preferences["cancel_other_regions"] = (
-            "on" if self.cancel_other_regions else "off"
         )
         self.preferences_panel = RegionPreferencesPanel(self.pref_btn, self)
 
@@ -110,6 +113,25 @@ class emFlowFieldVisualizer(FlowFieldVisualizerBase):
             region_axes.append(self.axes[:, start:end])
         return torch.cat(region_axes, dim=1)
 
+    @property
+    def static_region_list(self) -> list[str]:
+        """Return regions currently held static rather than placed on the grid."""
+        return [r for r in self.available_regions if r not in self.region_list]
+
+    def _normalize_excluded_static_regions(
+        self, regions: list[str] | None
+    ) -> list[str]:
+        """Validate and order the initially cancelled static regions."""
+        if not regions:
+            return []
+        invalid = set(regions) - set(self.static_region_list)
+        if invalid:
+            raise ValueError(
+                "excluded_static_regions must be contained in static_region_list; "
+                f"invalid regions: {sorted(invalid)}"
+            )
+        return [r for r in self.static_region_list if r in regions]
+
     def _rebuild_finder(self) -> None:
         """Rebuild the finder after a preference changes the analyzed subspace.
 
@@ -135,19 +157,24 @@ class emFlowFieldVisualizer(FlowFieldVisualizerBase):
             self.region_list = [
                 r for r in self.available_regions if r in {*self.region_list, region}
             ]
+        self.excluded_static_regions = [
+            r for r in self.excluded_static_regions if r in self.static_region_list
+        ]
         self._rebuild_finder()
 
-    def adjust_pref(self, key: str, direction: int) -> None:
-        """Apply an options-menu preference change.
-
-        Standard rendering preferences are handled by the inherited base class.
-        Regional preferences rebuild the finder so future flow computations use
-        the new region configuration.
-        """
-        super().adjust_pref(key, direction)
-        if key == "cancel_other_regions":
-            self.cancel_other_regions = self.preferences["cancel_other_regions"] == "on"
-            self._rebuild_finder()
+    def toggle_cancelled_region(self, region: str) -> None:
+        """Toggle whether one currently static region is zeroed by the finder."""
+        if region not in self.static_region_list:
+            return
+        if region in self.excluded_static_regions:
+            self.excluded_static_regions.remove(region)
+        else:
+            self.excluded_static_regions = [
+                r
+                for r in self.static_region_list
+                if r in {*self.excluded_static_regions, region}
+            ]
+        self._rebuild_finder()
 
     def build_finder(self) -> emFlowFieldFinder:
         """Build an Elman flow-field finder for the current region selection.
@@ -172,7 +199,7 @@ class emFlowFieldVisualizer(FlowFieldVisualizerBase):
             axes=axes,
             follow_traj=False,
             region_list=self.region_list,
-            cancel_other_regions=self.cancel_other_regions,
+            excluded_static_regions=self.excluded_static_regions,
         )
         return finder
 

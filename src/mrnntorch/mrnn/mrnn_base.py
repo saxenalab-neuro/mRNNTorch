@@ -35,11 +35,47 @@ DEFAULTS_MRNN = {
 }
 
 
-def linear(x):
+def linear(x: torch.Tensor) -> torch.Tensor:
+    """Return ``x`` unchanged for models using linear activation.
+
+    Args:
+        x: Tensor passed through the activation function.
+
+    Returns:
+        The original tensor without copying or modification.
+    """
     return x
 
 
 class mRNNBase(nn.Module):
+    """Base class for multi-regional recurrent neural networks.
+
+    ``mRNNBase`` contains the shared machinery for declaring recurrent and
+    input regions, adding directed connectivity, assembling full weight
+    matrices, applying Dale-style sign constraints, handling device placement,
+    and loading JSON network configurations. Concrete subclasses implement the
+    actual recurrent update and initial-condition shape.
+
+    Args:
+        config: Optional path to a JSON network configuration. If omitted, build
+            the model manually with ``add_recurrent_region()``,
+            ``add_input_region()``, and connection methods.
+        activation: Activation name. Supported values are ``"relu"``,
+            ``"tanh"``, ``"sigmoid"``, ``"softplus"``, and ``"linear"``.
+        noise_level_act: Hidden-state Gaussian noise scale.
+        noise_level_inp: Input Gaussian noise scale.
+        rec_constrained: Whether recurrent weights obey sign constraints.
+        inp_constrained: Whether input weights obey sign constraints.
+        batch_first: Whether sequence tensors use ``[batch, time, features]``.
+        spectral_radius: Optional recurrent spectral-radius target applied after
+            connectivity finalization.
+        config_finalize: Whether to finalize connectivity after loading a JSON
+            configuration.
+        device: Torch device string used for model tensors.
+        resevoir: If true, recurrent weights are frozen while input weights
+            remain trainable.
+    """
+
     def __init__(
         self,
         config: str = DEFAULTS_MRNN["config"],
@@ -79,7 +115,7 @@ class mRNNBase(nn.Module):
             noise_level_inp (float): Std of input noise term. Default: 0.01.
             rec_constrained (bool): If True, apply Dale's Law to rec regions. Default: True.
             inp_constrained (bool): If True, apply Dale's Law to inp regions. Default: True.
-            dt (float): Discrete step in ms used for the Euler update. Default: 10.
+        dt (float): Discrete step in ms used for the Euler update. Default: 10.
             tau (float): Time constant in ms; alpha = dt / tau. Default: 100.
             batch_first (bool): If True, sequences are [B, T, ...]; else [T, B, ...].
             spectral_radius (float | None): If set, scales recurrent weights so the
@@ -476,7 +512,7 @@ class mRNNBase(nn.Module):
         self.inp_finalized = True
 
     def compute_spectral_radius(self, weight: torch.Tensor) -> float:
-        """Compute the spectral radius (max |eigenvalue|) of a square matrix.
+        """Compute the spectral radius, the largest absolute eigenvalue, of a matrix.
 
         Args:
             weight (torch.Tensor): Square weight matrix.
@@ -591,6 +627,17 @@ class mRNNBase(nn.Module):
             else self.inp_dict[region].num_units
         )
 
+    def get_region_sizes(self, *args) -> int:
+        """Get the number of units in a sequence of regions
+
+        Args:
+            args (str): regions to get size of
+        """
+        size = 0
+        for r in args:
+            size += self.get_region_size(r)
+        return size
+
     def get_region_activity(self, act: torch.Tensor, *args) -> torch.Tensor:
         """
         Takes in hn and the specified region and returns the activity hn for the corresponding region
@@ -611,7 +658,7 @@ class mRNNBase(nn.Module):
             if region in self.inp_dict:
                 raise Exception("Can only get activity for recurrent regions")
 
-        args = self._ensure_order(*args)
+        args = self.ensure_order(*args)
 
         # Go and check if any parent regions are entered
         for region in unique_regions.copy():
@@ -670,7 +717,7 @@ class mRNNBase(nn.Module):
             if region in self.inp_dict:
                 raise Exception("Can only gather input subsets using get_projection")
 
-        args = self._ensure_order(*args)
+        args = self.ensure_order(*args)
 
         # This is used to store the final collected weight matrix
         global_weight_collection = []
@@ -724,6 +771,10 @@ class mRNNBase(nn.Module):
         states_a = torch.flatten(states_a, end_dim=-2)
         states_b = torch.flatten(states_b, end_dim=-2)
 
+        assert set(region_list_a).isdisjoint(region_list_b), (
+            "region lists must be disjoint"
+        )
+
         # Gather batches of grids with trial activity at each timestep
         region_a_idx = 0
         region_b_idx = 0
@@ -745,8 +796,6 @@ class mRNNBase(nn.Module):
                     ]
                 )
                 region_b_idx += self.get_region_size(region)
-            else:
-                raise Exception(f"region {region} not in either list")
         full_state = torch.cat(full_state, dim=-1)
 
         if keep_dims:
@@ -762,7 +811,7 @@ class mRNNBase(nn.Module):
             from_ (str): Name of region projecting (column)
 
         Returns:
-            torch.Tensor: weight matrix of from_->to projection
+            torch.Tensor: weight matrix for the ``from_`` to ``to`` projection
         """
 
         # Store regions if parent regions are given
@@ -870,6 +919,17 @@ class mRNNBase(nn.Module):
     def batched_initial_condition(
         self, *args, **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Return initial recurrent state tensors for a batch.
+
+        Concrete subclasses define whether the model needs one hidden-state
+        tensor or separate pre-activation and activation tensors.
+
+        Returns:
+            Batched initial state tensors suitable for passing to ``forward``.
+
+        Raises:
+            NotImplementedError: Always raised by the abstract base class.
+        """
         raise NotImplementedError
 
     @property
@@ -903,6 +963,15 @@ class mRNNBase(nn.Module):
         return excluded_regions
 
     def forward(self, *args, **kwargs):
+        """Run one concrete mRNN implementation over an input sequence.
+
+        Subclasses implement the model-specific recurrence and return shape.
+        Use :class:`mrnntorch.mrnn.leaky_mrnn.mRNN` for leaky dynamics or
+        :class:`mrnntorch.mrnn.elman_mrnn.ElmanmRNN` for Elman dynamics.
+
+        Raises:
+            NotImplementedError: Always raised by the abstract base class.
+        """
         raise NotImplementedError
 
     @property
@@ -1090,6 +1159,6 @@ class mRNNBase(nn.Module):
             b=np.sqrt(1 / (self.total_num_units + self.total_num_inputs)),
         )
 
-    def _ensure_order(self, *args) -> tuple[str]:
+    def ensure_order(self, *args) -> tuple[str]:
         """Reorder args if given regions are out of order"""
         return tuple(r for r in self.region_dict if r in args)

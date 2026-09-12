@@ -1,3 +1,5 @@
+"""Local Jacobian and eigendecomposition tools for Elman mRNNs."""
+
 import torch
 from mrnntorch.mrnn.elman_mrnn import ElmanmRNN
 from typing import Tuple

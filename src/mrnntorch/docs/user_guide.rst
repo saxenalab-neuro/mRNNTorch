@@ -29,8 +29,9 @@ Region-Specific Analysis
 
 Most analysis classes accept ``region_list``. When supplied, the analysis is
 performed in the concatenated activity of those regions, in model order. Regions
-not listed can be treated as static context, or zeroed by enabling
-``cancel_other_regions`` where supported.
+not listed can be treated as static context, or selected for zeroing with
+``excluded_static_regions``. Every excluded static region must also be outside
+``region_list``.
 
 Dimensionality Reduction
 ------------------------

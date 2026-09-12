@@ -56,7 +56,7 @@ Region-Specific Flow Field
        y_offset=5,
        fit_states=hs.reshape(-1, hs.shape[-1]),
        region_list=["ctx"],
-       cancel_other_regions=False,
+       excluded_static_regions=[],
    )
    fields = finder.find_nonlinear_flow(hs[:, :1], inputs[:, :1])
 
