@@ -170,8 +170,7 @@ def test_eigendecomposition_returns_real_imag_parts_l():
     mrnn = _build_leaky_mrnn_with_inputs()
     lin = mLinearization(mrnn)
     x = torch.zeros(3)
-    inp = torch.zeros(1)
-    reals, ims, vecs = lin.eigendecomposition(inp, x)
+    reals, ims, vecs = lin.eigendecomposition(x)
     # Eigenvectors are returned column-wise for a square matrix.
     assert vecs.shape == (3, 3)
     assert len(reals) == 3
@@ -237,8 +236,7 @@ def test_eigendecomposition_returns_real_imag_parts_e():
     mrnn = _build_elman_mrnn_with_inputs()
     lin = emLinearization(mrnn)
     x = torch.zeros(3)
-    inp = torch.zeros(1)
-    reals, ims, vecs = lin.eigendecomposition(inp, x)
+    reals, ims, vecs = lin.eigendecomposition(x)
     # Eigenvectors are returned column-wise for a square matrix.
     assert vecs.shape == (3, 3)
     assert len(reals) == 3

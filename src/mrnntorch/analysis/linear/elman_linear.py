@@ -192,13 +192,11 @@ class emLinearization:
 
     def eigendecomposition(
         self,
-        input: torch.Tensor,
         h: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute the eigendecomposition of the local hidden-state Jacobian.
 
         Args:
-            input (torch.Tensor): Input vector at which to linearize.
             h (torch.Tensor): Hidden state at which to linearize.
 
         Returns:
@@ -206,6 +204,7 @@ class emLinearization:
             torch.Tensor: Imag parts of eigenvalues.
             torch.Tensor: Eigenvectors stacked column-wise.
         """
+        input = h.new_zeros(self.rnn.total_num_inputs)
         _jacobian, _ = self.jacobian(input, h)
         eigenvalues, eigenvectors = torch.linalg.eig(_jacobian)
         # Split real and imaginary parts

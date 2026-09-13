@@ -69,9 +69,7 @@ Linearization Around A State
 
    lin = emLinearization(rnn, "ctx")
    jacobian, input_jacobian = lin.jacobian(inputs[0, 0], hs[0, 0])
-   real_parts, imaginary_parts, eigenvectors = lin.eigendecomposition(
-       inputs[0, 0], hs[0, 0]
-   )
+   real_parts, imaginary_parts, eigenvectors = lin.eigendecomposition(hs[0, 0])
 
 Interactive Flow Visualizer
 ---------------------------

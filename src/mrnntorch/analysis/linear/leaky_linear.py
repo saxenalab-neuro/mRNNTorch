@@ -259,7 +259,6 @@ class mLinearization:
 
     def eigendecomposition(
         self,
-        input: torch.Tensor,
         x: torch.Tensor,
         h: torch.Tensor | None = None,
         dh: bool = False,
@@ -268,7 +267,6 @@ class mLinearization:
         """Compute the eigendecomposition of the local Jacobian.
 
         Args:
-            input (torch.Tensor): Input vector at which to linearize.
             x (torch.Tensor): Pre-activation state at which to linearize.
             h (torch.Tensor | None): Hidden activation used when ``dh`` is ``True``.
             dh (bool): If ``True``, eigendecompose the hidden-state Jacobian.
@@ -278,6 +276,7 @@ class mLinearization:
             torch.Tensor: Imag parts of eigenvalues.
             torch.Tensor: Eigenvectors stacked column-wise.
         """
+        input = x.new_zeros(self.rnn.total_num_inputs)
         _jacobian, _ = self.jacobian(input, x, h=h, dh=dh, alpha_scaling=alpha_scaling)
         eigenvalues, eigenvectors = torch.linalg.eig(_jacobian)
 
