@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 import pygame
 import torch
-from mrnntorch.analysis.flow_fields.elman_flow_field_finder import emFlowFieldFinder
+from mrnntorch.analysis.flow_field_finder import mFlowFieldFinder
 from mrnntorch.mrnn.elman_mrnn import ElmanmRNN
 from rnntoolkit import FlowField
 from rnntoolkit import FlowFieldFinderBase
@@ -176,7 +176,7 @@ class emFlowFieldVisualizer(AxisSelectionMixin, FlowFieldVisualizerBase):
             ]
         self._rebuild_finder()
 
-    def build_finder(self) -> emFlowFieldFinder:
+    def build_finder(self) -> mFlowFieldFinder:
         """Build an Elman flow-field finder for the current region selection.
 
         ``fit_states`` and explicit axes are narrowed to the selected regions
@@ -188,7 +188,7 @@ class emFlowFieldVisualizer(AxisSelectionMixin, FlowFieldVisualizerBase):
             fit_states = self.rnn.get_region_activity(fit_states, *self.region_list)
         axes = self._region_axes()
 
-        finder = emFlowFieldFinder(
+        finder = mFlowFieldFinder(
             rnn=self.rnn,
             num_points=self.num_points,
             x_offset=self.x_offset,

@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 import pygame
 import torch
-from mrnntorch.analysis.flow_fields.leaky_flow_field_finder import mFlowFieldFinder
+from mrnntorch.analysis.flow_field_finder import mFlowFieldFinder
 from mrnntorch.mrnn.leaky_mrnn import mRNN
 from rnntoolkit import FlowField
 from rnntoolkit import FlowFieldFinderBase

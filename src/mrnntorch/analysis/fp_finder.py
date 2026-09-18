@@ -8,6 +8,9 @@ from copy import deepcopy
 from rnntoolkit.fixed_points.fp import FixedPointCollection
 from rnntoolkit.fixed_points.fp_finder import FixedPointFinderBase
 from mrnntorch.mrnn.leaky_mrnn import mRNN
+from mrnntorch.mrnn.elman_mrnn import ElmanmRNN
+from mrnntorch.analysis.adapter import mRNNAdapter
+import warnings
 
 
 class mFixedPointFinder(FixedPointFinderBase[mRNN]):
@@ -15,7 +18,7 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
 
     def __init__(
         self,
-        rnn: mRNN,
+        rnn: mRNN | ElmanmRNN,
         lr_init: float = 1e-4,
         tol_q: float = 1e-12,
         tol_dq: float = 1e-20,
@@ -59,6 +62,7 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
         self.dtype = dtype
         self.device = next(rnn.parameters()).device
         self.torch_dtype = getattr(torch, self.dtype)
+        self.adapter = mRNNAdapter(rnn)
 
         # Make random sequences reproducible
         self.random_seed = random_seed
@@ -145,17 +149,10 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
             fixed points.
 
             ext_inputs: external inputs to the RNN
-
             stim_inp: Additional stimulus input to the network
-
-            W_rec: Fixed weight matrix to replace self.mrnn.W_rec in forward
-            pass
-
-            W_rec: Fixed weight matrix to replace self.mrnn.W_inp in forward
-            pass
-
-            n_rounds_q_opt: Number of rounds to run extra iterations on q
-            outliers
+            W_rec: Fixed weight matrix to replace self.mrnn.W_rec in forward pass
+            W_rec: Fixed weight matrix to replace self.mrnn.W_inp in forward pass
+            n_rounds_q_opt: Number of rounds to run extra iterations on q outliers
 
         Returns:
             unique_fps: A FixedPoints object containing the set of unique
@@ -172,6 +169,9 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
             unique_fps).
         """
 
+        if optimize_h and not self.adapter.is_leaky:
+            warnings.warn("optimize_h is True but mrnn is not leaky, parameter ignored")
+
         all_fps = self._fp_optimization(
             initial_states,
             ext_inputs,
@@ -182,14 +182,11 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
         )
 
         # Filter out duplicates after from the first optimization round
-        if optimize_h:
-            # If optimization is performed on h, get unique using Fxstar
-            # this is because Fxstar is h_next, so unique will be performed on activation
-            # This is a workaround, however keeping xstar as x is good for
-            # when a user might want to pass the fixed point to the mrnn again (i.e. during linearization)
-            unique_fps = all_fps.get_unique(use_F_xstar=True)
-        else:
-            unique_fps = all_fps.get_unique()
+        # If optimization is performed on h, get unique using Fxstar
+        # this is because Fxstar is h_next, so unique will be performed on activation
+        # This is a workaround, however keeping xstar as x is good for
+        # when a user might want to pass the fixed point to the mrnn again (i.e. during linearization)
+        unique_fps = all_fps.get_unique(use_F_xstar=self.adapter.is_leaky and optimize_h)
 
         self._print_if_verbose("\tIdentified %d unique fixed points." % unique_fps.n)
 
@@ -208,7 +205,7 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
                 n_rounds=n_rounds_q_opt,
             )
             # Filter out duplicates after from the second optimization round
-            unique_fps = unique_fps.get_unique()
+            unique_fps = unique_fps.get_unique(use_F_xstar=self.adapter.is_leaky and optimize_h)
 
         # Optionally subselect from the unique fixed points (e.g., for
         # computational savings when not all are needed.)
@@ -358,16 +355,14 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
         # Get batch size of states
         n = initial_states.shape[0]
 
-        # Broadcast external input to [n, 1, d]
+        # Broadcast external input to [n, d]
         ext_inp = self._broadcast_nxd(ext_inp, tile_n=n)
-        ext_inp = ext_inp.unsqueeze(TIME_DIM)
 
-        # Broadcast stimulus input to [n, 1, d]
+        # Broadcast stimulus input to [n, d]
         if stim_inp is not None:
             stim_inp = self._broadcast_nxd(stim_inp, tile_n=n)
-            stim_inp = stim_inp.unsqueeze(TIME_DIM)
         else:
-            stim_inp = torch.zeros(size=(n, 1, 1))
+            stim_inp = torch.zeros_like(initial_states)
             stim_inp = stim_inp.to(self.torch_dtype)
             stim_inp = stim_inp.to(self.device)
 
@@ -420,30 +415,17 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
 
         # Begin optimization
         while True:
-            x = torch.cat(region_tensor_list, dim=-1)
-            # If optimizing over h get h_next
-            if optimize_h:
-                h = self.rnn.activation(x)
-                _, F_x_1xbxd = self.rnn(
-                    ext_inp,
-                    x,
-                    h,
-                    stim_input=stim_inp,
-                    noise=False,
-                    W_rec=W_rec,
-                )
-                state_prev = h
-            # get x_next otherwise
-            else:
-                F_x_1xbxd, _ = self.rnn(
-                    ext_inp,
-                    x,
-                    stim_input=stim_inp,
-                    noise=False,
-                    W_rec=W_rec,
-                )
-                state_prev = x
-            F_x_1xbxd = F_x_1xbxd.squeeze(TIME_DIM)
+            state = torch.cat(region_tensor_list, dim=-1)
+            leaky_h = self.rnn.activation(state) if self.adapter.is_leaky and optimize_h else None
+            F_x_1xbxd = self.adapter.step(
+                ext_inp,
+                state,
+                h=leaky_h,
+                stim_input=stim_inp,
+                noise=False,
+                W_rec=W_rec,
+            )
+            state_prev = leaky_h if self.adapter.is_leaky and optimize_h else state
 
             state_prev_r = []
             state_next_r = []
@@ -506,18 +488,28 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
         # remove extra dims
         # For now make the fixed point include all regions
         full_fp = torch.cat(region_tensor_list, dim=-1)
-        xstar = full_fp.detach().cpu()
 
+        with torch.no_grad():
+            leaky_h = self.rnn.activation(full_fp) if self.adapter.is_leaky and optimize_h else None
+            F_x_1xbxd = self.adapter.step(
+                ext_inp,
+                full_fp,
+                h=leaky_h,
+                stim_input=stim_inp,
+                noise=False,
+                W_rec=W_rec,
+            )
+
+        xstar = full_fp.detach().cpu()
         F_xstar = F_x_1xbxd.detach().cpu()
 
         # Indicate same n_iters for each initialization (i.e., joint optimization)
         n_iters = torch.tile(torch.tensor([iter_count]), dims=(F_xstar.shape[0],))
-        inputs_bxd = ext_inp.squeeze(TIME_DIM)
 
         fps = FixedPointCollection(
             xstar=xstar,
             x_init=initial_states,
-            inputs=inputs_bxd,
+            inputs=ext_inp,
             F_xstar=F_xstar,
             qstar=ev_q_b,
             dq=ev_dq_b,

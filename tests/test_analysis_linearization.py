@@ -7,8 +7,7 @@ keeping network construction minimal.
 import pytest
 import torch
 
-from mrnntorch.analysis import emLinearization
-from mrnntorch.analysis import mLinearization
+from mrnntorch.analysis.linear import mLinearization
 from mrnntorch import mRNN, ElmanmRNN
 
 
@@ -124,7 +123,7 @@ def test_jacobian_matches_weight_h_l():
     x_next, _ = mrnn(inp.unsqueeze(0).unsqueeze(0), x.unsqueeze(0))
     x_next = x_next.squeeze()
     dx = torch.where(x_next > 0, 1.0, 0.0)
-    jac, jac_inp = lin.jacobian(inp, x, h=h, dh=True)
+    jac, jac_inp = lin.jacobian(inp, x, dh=True)
     assert torch.allclose(jac, torch.diag(dx) @ (mrnn.W_rec))
     assert torch.allclose(jac_inp, torch.diag(dx) @ (mrnn.W_inp))
 
@@ -139,7 +138,7 @@ def test_jacobian_matches_weight_h_r1_l():
     x_next, _ = mrnn(inp.unsqueeze(0).unsqueeze(0), x.unsqueeze(0))
     x_next = x_next.squeeze()
     dx = torch.where(x_next > 0, 1.0, 0.0)
-    jac, jac_inp = lin.jacobian(inp, x, h=h, dh=True)
+    jac, jac_inp = lin.jacobian(inp, x, dh=True)
     assert torch.allclose(
         jac,
         mrnn.get_weight_subset("r1", W=torch.diag(dx) @ (mrnn.W_rec)),
@@ -157,7 +156,7 @@ def test_jacobian_matches_weight_h_r2_l():
     x_next, _ = mrnn(inp.unsqueeze(0).unsqueeze(0), x.unsqueeze(0))
     x_next = x_next.squeeze()
     dx = torch.where(x_next > 0, 1.0, 0.0)
-    jac, jac_inp = lin.jacobian(inp, x, h=h, dh=True)
+    jac, jac_inp = lin.jacobian(inp, x, dh=True)
     assert torch.allclose(
         jac,
         mrnn.get_weight_subset("r2", W=torch.diag(dx) @ (mrnn.alpha * mrnn.W_rec)),
@@ -191,7 +190,7 @@ def test_jacobian_requires_1d_x_l():
 def test_linear_jacobian_matches_weight_e():
     """Linear activation yields Jacobian equal to W_rec (scaled by alpha)."""
     mrnn = _build_elman_mrnn_with_inputs(activation="linear")
-    lin = emLinearization(mrnn)
+    lin = mLinearization(mrnn)
     x = torch.zeros(3)
     inp = torch.zeros(1)
     jac, jac_inp = lin.jacobian(inp, x)
@@ -202,7 +201,7 @@ def test_linear_jacobian_matches_weight_e():
 def test_jacobian_matches_weight_r1_e():
     """Linear activation yields Jacobian equal to W_rec (scaled by alpha)."""
     mrnn = _build_elman_mrnn_with_inputs(activation="relu")
-    lin = emLinearization(mrnn, "r1")
+    lin = mLinearization(mrnn, "r1")
     h = torch.tensor([1.0, 1.0, -1.0])
     inp = torch.zeros(1)
     h_next = mrnn(inp.unsqueeze(0).unsqueeze(0), h.unsqueeze(0))
@@ -218,7 +217,7 @@ def test_jacobian_matches_weight_r1_e():
 def test_jacobian_matches_weight_r2_e():
     """Linear activation yields Jacobian equal to W_rec (scaled by alpha)."""
     mrnn = _build_elman_mrnn_with_inputs(activation="relu")
-    lin = emLinearization(mrnn, "r2")
+    lin = mLinearization(mrnn, "r2")
     h = torch.tensor([1.0, 1.0, -1.0])
     inp = torch.zeros(1)
     h_next = mrnn(inp.unsqueeze(0).unsqueeze(0), h.unsqueeze(0))
@@ -234,7 +233,7 @@ def test_jacobian_matches_weight_r2_e():
 def test_eigendecomposition_returns_real_imag_parts_e():
     """Eigen decomposition returns real/imag parts and eigenvectors."""
     mrnn = _build_elman_mrnn_with_inputs()
-    lin = emLinearization(mrnn)
+    lin = mLinearization(mrnn)
     x = torch.zeros(3)
     reals, ims, vecs = lin.eigendecomposition(x)
     # Eigenvectors are returned column-wise for a square matrix.
@@ -246,6 +245,61 @@ def test_eigendecomposition_returns_real_imag_parts_e():
 def test_jacobian_requires_1d_x_e():
     """jacobian() asserts on non-1D inputs to avoid shape ambiguity."""
     mrnn = _build_elman_mrnn_with_inputs()
-    lin = emLinearization(mrnn)
+    lin = mLinearization(mrnn)
     with pytest.raises(AssertionError):
         lin.jacobian(torch.zeros(1, 1), torch.zeros(1, 2))
+
+
+@pytest.mark.parametrize("model_type", [mRNN, ElmanmRNN])
+@pytest.mark.parametrize("batch_first", [True, False])
+@pytest.mark.parametrize("activity_mode", [True, False])
+def test_shared_linearization_matches_native_jacobian(model_type, batch_first, activity_mode):
+    builder = (
+        _build_leaky_mrnn_with_inputs if model_type is mRNN
+        else _build_elman_mrnn_with_inputs
+    )
+    rnn = builder(activation="tanh")
+    rnn.batch_first = batch_first
+    lin = mLinearization(rnn)
+    state = torch.tensor([0.4, -0.2, 0.1])
+    inp = torch.tensor([0.3])
+    dh = activity_mode and model_type is mRNN
+    h = rnn.activation(state) if dh else None
+
+    def native_update(u, variable):
+        if model_type is mRNN:
+            xs, hs = rnn(
+                u.reshape(1, 1, -1),
+                (state if dh else variable).unsqueeze(0),
+                h0=variable.unsqueeze(0) if dh else None,
+            )
+            return (hs if dh else xs).reshape(-1)
+        return rnn(u.reshape(1, 1, -1), variable.unsqueeze(0)).reshape(-1)
+
+    variable = h if dh else state
+    expected_input, expected_state = torch.autograd.functional.jacobian(
+        native_update, (inp, variable)
+    )
+    jac, jac_input = lin.jacobian(inp, state, dh=dh, alpha_scaling=True)
+    torch.testing.assert_close(jac, expected_state)
+    torch.testing.assert_close(jac_input, expected_input)
+    torch.testing.assert_close(
+        lin(inp, state, torch.zeros_like(inp), torch.zeros_like(state),
+            dh=dh, alpha_scaling=True),
+        native_update(inp, variable),
+    )
+    subset = mLinearization(rnn, "r1")
+    excluded, _ = subset.jacobian(
+        inp, state, dh=dh, excluded_regions=True, alpha_scaling=True
+    )
+    torch.testing.assert_close(excluded, expected_state[:2, 2:])
+    if dh:
+        normalized, normalized_input = lin.jacobian(inp, state, dh=True)
+        torch.testing.assert_close(normalized, expected_state / rnn.alpha)
+        torch.testing.assert_close(normalized_input, expected_input / rnn.alpha)
+        reals, imags, vectors = lin.eigendecomposition(state, dh=True, alpha_scaling=True)
+        zero_input_jac, _ = lin.jacobian(torch.zeros_like(inp), state, dh=True, alpha_scaling=True)
+        torch.testing.assert_close(
+            zero_input_jac.to(vectors.dtype) @ vectors,
+            vectors * torch.complex(reals, imags),
+        )

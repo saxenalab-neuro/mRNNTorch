@@ -1,18 +1,21 @@
-"""Two-dimensional flow-field estimation for Elman mRNN trajectories."""
+"""Two-dimensional flow-field estimation for leaky mRNN trajectories."""
 
 import torch
-from mrnntorch.analysis.linear.elman_linear import emLinearization
+from mrnntorch.analysis.linear import mLinearization
 from rnntoolkit.flow_fields.flow_field import FlowField
 from rnntoolkit.flow_fields.flow_field_finder_base import FlowFieldFinderBase
+from mrnntorch.mrnn.leaky_mrnn import mRNN
 from mrnntorch.mrnn.elman_mrnn import ElmanmRNN
+from mrnntorch.analysis.adapter import mRNNAdapter
+import warnings
 
 
-class emFlowFieldFinder(FlowFieldFinderBase[ElmanmRNN]):
-    """Flow-field estimator for Elman mRNN trajectories and local linearizations."""
+class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
+    """Flow-field estimator for leaky mRNN trajectories and local linearizations."""
 
     def __init__(
         self,
-        rnn: ElmanmRNN,
+        rnn: mRNN | ElmanmRNN,
         num_points: int,
         x_offset: int,
         y_offset: int,
@@ -27,7 +30,7 @@ class emFlowFieldFinder(FlowFieldFinderBase[ElmanmRNN]):
         """Initialize a 2D flow-field finder around a trajectory.
 
         Args:
-            rnn (ElmanmRNN): Network to analyze.
+            rnn (mRNN): Network to analyze.
             fit_states (torch.Tensor): States used to fit the dimensionality
                 reduction used for the flow-field plane.
             num_points (int): Number of grid points along each axis.
@@ -47,6 +50,7 @@ class emFlowFieldFinder(FlowFieldFinderBase[ElmanmRNN]):
         # Unload mrnn specific kwargs
         self.excluded_static_regions = excluded_static_regions
         self.follow_traj = follow_traj
+        self.adapter = mRNNAdapter(self.rnn)
 
         self.zero_states = torch.zeros(
             size=(
@@ -68,7 +72,7 @@ class emFlowFieldFinder(FlowFieldFinderBase[ElmanmRNN]):
             else self.rnn.get_excluded_hid_regions(*self.region_list)
         )
         assert set(self.excluded_static_regions) <= set(self.static_region_list)
-        self.linearization = emLinearization(rnn, *self.region_list)
+        self.linearization = mLinearization(rnn, *self.region_list)
 
     def find_nonlinear_flow(
         self,
@@ -76,6 +80,7 @@ class emFlowFieldFinder(FlowFieldFinderBase[ElmanmRNN]):
         input: torch.Tensor,
         stim_input: torch.Tensor | None = None,
         W: torch.Tensor | None = None,
+        x_is_h: bool = False,
     ) -> list:
         """Compute nonlinear 2D flow fields in a region subspace along a trajectory.
 
@@ -86,18 +91,19 @@ class emFlowFieldFinder(FlowFieldFinderBase[ElmanmRNN]):
 
         Args:
             states (torch.Tensor): Hidden activations over time [batch_size, T, N].
-            inp (torch.Tensor): External input sequence.
-            stim_input (torch.Tensor | None): Optional additive stimulus input.
-            W (torch.Tensor | None): Optional weight matrix to use.
+            input (torch.Tensor): External input sequence.
 
         Kwargs:
             stim_input (torch.Tensor): tensor input to network without weights, acts as manipulation
             W (torch.Tensor): replace the weight matrix of mRNN with W
-            traj_to_reduce (torch.Tensor): tensor similar to states that will be used for PCA instead of states
+            x_is_h (bool): whether to assume x=h, this will give an approximation of \
+                the flow field in h by assuming they are equal
 
         Returns:
             list: FlowField object per sampled time.
         """
+        if x_is_h and not self.adapter.is_leaky:
+            warnings.warn("x_is_h is True but rnn is not leaky, parameter is ignored")
 
         flow_field_list = []
 
@@ -114,11 +120,6 @@ class emFlowFieldFinder(FlowFieldFinderBase[ElmanmRNN]):
         assert states.shape[0] == input.shape[0]
         n_states = states.shape[0]
 
-        """
-        states is now meant to be network activation, or h.
-        To get valid xs, we will invert h in the compute function
-        """
-
         # get region activity for fitting and reduction
         tmp_states = self.rnn.get_region_activity(states, *self.region_list)
         reduced_traj = self._reduce_traj(tmp_states)
@@ -129,10 +130,10 @@ class emFlowFieldFinder(FlowFieldFinderBase[ElmanmRNN]):
         else:
             static_states = []
             for static_r in self.static_region_list:
-                static_state = self.rnn.get_region_activity(states, static_r)
+                static_x = self.rnn.get_region_activity(states, static_r)
                 if static_r in self.excluded_static_regions:
-                    static_state = static_state * torch.zeros_like(static_state)
-                static_states.append(static_state)
+                    static_x = static_x * torch.zeros_like(static_x)
+                static_states.append(static_x)
             static_states = torch.cat(static_states, dim=-1)
 
         # Now going through trajectory
@@ -163,35 +164,35 @@ class emFlowFieldFinder(FlowFieldFinderBase[ElmanmRNN]):
 
             # Repeat along the batch dimension to match the grid
             if static_states_n is not None:
-                static_act_batch = static_states_n.repeat(low_dim_grid.shape[0], 1)
+                static_states_batch = static_states_n.repeat(low_dim_grid.shape[0], 1)
             else:
-                static_act_batch = None
+                static_states_batch = None
 
             full_input_batch = input_n.repeat(low_dim_grid.shape[0], 1)
             full_stim_batch = stim_input_n.repeat(low_dim_grid.shape[0], 1)
 
             # Combine the grid and static states to treat excluded regions as input
-            if static_act_batch is not None:
-                h_0_flow = self.rnn.combine_states(
+            if static_states_batch is not None:
+                grid_flow = self.rnn.combine_states(
                     inverse_grid,
-                    static_act_batch,
+                    static_states_batch,
                     self.region_list,
                     self.static_region_list,
                 )
             else:
-                h_0_flow = inverse_grid
+                grid_flow = inverse_grid
 
             with torch.no_grad():
-                # Get activity for current timestep
-                h_next = self.rnn(
-                    full_input_batch.unsqueeze(self.time_dim),
-                    h_0_flow,
-                    stim_input=full_stim_batch.unsqueeze(self.time_dim),
+                next_state = self.adapter.step(
+                    full_input_batch,
+                    grid_flow,
+                    h=grid_flow if self.adapter.is_leaky and x_is_h else None,
+                    stim_input=full_stim_batch,
                     noise=False,
                     W_rec=W,
                 )
 
-            next_state = self.rnn.get_region_activity(h_next, *self.region_list)
+            next_state = self.rnn.get_region_activity(next_state, *self.region_list)
             next_state_reduced = self._reduce_traj(next_state)
 
             x_vel, y_vel = self._compute_velocity(next_state_reduced, low_dim_grid)
@@ -213,7 +214,7 @@ class emFlowFieldFinder(FlowFieldFinderBase[ElmanmRNN]):
         states: torch.Tensor,
         input: torch.Tensor,
         delta_input: torch.Tensor,
-        delta_h_static: torch.Tensor | None = None,
+        delta_state_static: torch.Tensor | None = None,
     ) -> list:
         """Compute linearized 2D flow fields around sampled trajectory states.
 
@@ -222,22 +223,20 @@ class emFlowFieldFinder(FlowFieldFinderBase[ElmanmRNN]):
         step. Assumes no external input to the selected regions.
 
         Args:
-            states (torch.Tensor): Hidden activations over time.
+            states (torch.Tensor): Network states over time.
             inp (torch.Tensor): External input sequence aligned with ``states``.
             delta_inp (torch.Tensor): Input perturbations for the local linear model.
-            delta_h_static (torch.Tensor | None): Perturbations for recurrent regions
-                excluded from the reduced plane.
+            delta_state_static (torch.Tensor | None): Perturbations for recurrent regions \
+                excluded from the reduced plane. Should be for x or h depending on dh
+            dh (bool): If ``True``, linearize hidden activations instead of
+                pre-activations.
 
         Returns:
             list: FlowField objects per sampled time.
         """
 
         # reshape to nxd
-        states, input, delta_input = (
-            self._nxd(states),
-            self._nxd(input),
-            self._nxd(delta_input),
-        )
+        states, input, delta_input = self._nxd(states), self._nxd(input), self._nxd(delta_input)
 
         assert input.shape[0] == delta_input.shape[0]
         assert states.shape[0] == input.shape[0]
@@ -250,8 +249,11 @@ class emFlowFieldFinder(FlowFieldFinderBase[ElmanmRNN]):
         region_tmp = self.rnn.get_region_activity(states, *self.region_list)
         reduced_traj = self._reduce_traj(region_tmp)
 
+        if delta_state_static is not None:
+            delta_state_static = self._nxd(delta_state_static)
+
         # zero out static perturbations if regions are cancelled
-        if delta_h_static is not None and self.excluded_static_regions:
+        if delta_state_static is not None and self.excluded_static_regions:
             mask = []
             for static_r in self.static_region_list:
                 n_units = self.rnn.get_region_size(static_r)
@@ -261,14 +263,16 @@ class emFlowFieldFinder(FlowFieldFinderBase[ElmanmRNN]):
                     r_mask_cur = torch.ones(size=(1, n_units))
                 mask.append(r_mask_cur)
             mask = torch.cat(mask, dim=-1)
-            delta_h_static = delta_h_static * mask
+            delta_state_static = delta_state_static * mask
 
         for n in range(n_states):
             states_n = states[n]
             reduced_traj_n = reduced_traj[n]
             input_n = input[n]
             delta_input_n = delta_input[n]
-            delta_h_static_n = delta_h_static[n] if delta_h_static is not None else None
+            delta_state_static_n = (
+                delta_state_static[n] if delta_state_static is not None else None
+            )
 
             # If follow trajectory is true get grid centered around current t
             # This will make a different grid for each state (n grids)
@@ -291,22 +295,27 @@ class emFlowFieldFinder(FlowFieldFinderBase[ElmanmRNN]):
 
             # Get a perturbation of the activity
             region_states_n = self.rnn.get_region_activity(states_n, *self.region_list)
-            delta_h = inverse_grid - region_states_n
+            """
+                This assumes delta state is always of x 
+                This should be ok since it is a general perturbation still
+            """
+            delta_states = inverse_grid - region_states_n
 
             with torch.no_grad():
-                h_next = self.linearization(
+                # get next state of h or of x if dh is false
+                state_next = self.linearization(
                     input_n,
                     states_n,
                     delta_input_n,
-                    delta_h,
-                    delta_h_static=delta_h_static_n,
+                    delta_states,
+                    delta_state_static=delta_state_static_n,
                 )
 
             # Put next h into a grid format
-            h_next = self._reduce_traj(h_next)
+            state_next = self._reduce_traj(state_next)
 
             # Compute velocities between gathered trajectory of grid and original grid values
-            x_vel, y_vel = self._compute_velocity(h_next, low_dim_grid)
+            x_vel, y_vel = self._compute_velocity(state_next, low_dim_grid)
             speed = self._compute_speed(x_vel, y_vel)
 
             x_vel, y_vel, low_dim_grid, speed = self._reshape_vals(

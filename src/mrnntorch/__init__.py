@@ -1,4 +1,4 @@
-"""Top-level exports for mRNNTorch models and analysis utilities."""
+"""Top-level model exports; shared analysis tools live in ``mrnntorch.analysis``."""
 
 import os
 

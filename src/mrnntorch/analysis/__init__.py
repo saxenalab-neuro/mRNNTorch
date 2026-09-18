@@ -1,17 +1,13 @@
 """Analysis utilities for fixed points, flow fields, and local linearization."""
 
-from .fixed_points.elman_fp_finder import emFixedPointFinder
-from .fixed_points.leaky_fp_finder import mFixedPointFinder
-from .flow_fields.elman_flow_field_finder import emFlowFieldFinder
-from .flow_fields.leaky_flow_field_finder import mFlowFieldFinder
-from .linear.elman_linear import emLinearization
-from .linear.leaky_linear import mLinearization
+from .adapter import mRNNAdapter
+from .fp_finder import mFixedPointFinder
+from .flow_field_finder import mFlowFieldFinder
+from .linear import mLinearization
 
 __all__ = [
-    "emFixedPointFinder",
+    "mRNNAdapter",
     "mFixedPointFinder",
-    "emFlowFieldFinder",
     "mFlowFieldFinder",
-    "emLinearization",
     "mLinearization",
 ]

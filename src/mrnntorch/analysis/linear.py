@@ -1,17 +1,19 @@
-"""Local Jacobian and eigendecomposition tools for leaky mRNNs."""
+"""Local Jacobian and eigendecomposition tools for leaky and Elman mRNNs."""
 
 import torch
 from mrnntorch.mrnn.leaky_mrnn import mRNN
+from mrnntorch.mrnn.elman_mrnn import ElmanmRNN
+from mrnntorch.analysis.adapter import mRNNAdapter
 from typing import Tuple
 import warnings
 
 
 class mLinearization:
-    """Local linear analysis utilities for leaky :class:`mRNN` models."""
+    """Local linear analysis utilities for leaky and Elman mRNN models."""
 
     def __init__(
         self,
-        rnn: mRNN,
+        rnn: mRNN | ElmanmRNN,
         *args,
     ):
         """Initialize the linearization helper for a model and region subset.
@@ -22,6 +24,7 @@ class mLinearization:
                 linearized subspace. If omitted, all recurrent regions are used.
         """
         self.rnn = rnn
+        self.adapter = mRNNAdapter(rnn)
         # Regions which are treated as grid elements
         self.zero_states = torch.zeros(
             size=(
@@ -44,22 +47,21 @@ class mLinearization:
     def __call__(
         self,
         input: torch.Tensor,
-        x: torch.Tensor,
+        state: torch.Tensor,
         delta_input: torch.Tensor,
         delta_state: torch.Tensor,
+        *,
         delta_state_static: torch.Tensor | None = None,
-        h: torch.Tensor | None = None,
         dh: bool = False,
         alpha_scaling: bool = False,
     ) -> torch.Tensor:
         """Alias for :meth:`forward`."""
         return self.forward(
             input,
-            x,
+            state,
             delta_input,
             delta_state,
             delta_state_static=delta_state_static,
-            h=h,
             dh=dh,
             alpha_scaling=alpha_scaling,
         )
@@ -67,25 +69,23 @@ class mLinearization:
     def forward(
         self,
         input: torch.Tensor,
-        x: torch.Tensor,
+        state: torch.Tensor,
         delta_input: torch.Tensor,
         delta_state: torch.Tensor,
+        *,
         delta_state_static: torch.Tensor | None = None,
-        h: torch.Tensor | None = None,
         dh: bool = False,
         alpha_scaling: bool = False,
     ) -> torch.Tensor:
-        """Evaluate the first-order Taylor approximation of the leaky dynamics.
+        """Evaluate the linear approximation in the requested state coordinates.
 
         Args:
             input (torch.Tensor): External input at the operating point.
-            x (torch.Tensor): Pre-activation state about which to linearize.
+            state (torch.Tensor): Leaky pre-activation or Elman hidden state about which to linearize.
             delta_input (torch.Tensor): Input perturbation.
             delta_state (torch.Tensor): Perturbation for the state of the included \
                 region subset. Should be x perturbations or h perturbations if dh=True
-            h (torch.Tensor | None): Activation corresponding to ``x`` when \
-                linearizing hidden activations directly.
-            delta_h_static (torch.Tensor | None): Perturbation applied to excluded \
+            delta_state_static (torch.Tensor | None): Perturbation applied to excluded \
                 regions when only a subset of regions is linearized.
             dh (bool): If ``True``, linearize the hidden activation update instead \
                 of the pre-activation update.
@@ -97,10 +97,7 @@ class mLinearization:
 
         # Assert correct shapes
         assert input.dim() == 1
-        assert x.dim() == 1
-
-        if h is not None:
-            assert h.dim() == 1
+        assert state.dim() == 1
 
         # Flatten delta since it can be batched
         if delta_state.dim() > 1:
@@ -108,45 +105,39 @@ class mLinearization:
 
         # Get jacobians for included regions
         _jacobian, _jacobian_inp = self.jacobian(
-            input, x, h=h, dh=dh, alpha_scaling=alpha_scaling
+            input, state, dh=dh, alpha_scaling=alpha_scaling
         )
         if len(self.static_region_list) >= 1:
             # Get jacobians for excluded regions if available
             _jacobian_exc, _ = self.jacobian(
                 input,
-                x,
+                state,
                 excluded_regions=True,
-                h=h,
                 dh=dh,
                 alpha_scaling=alpha_scaling,
             )
         else:
             _jacobian_exc = None
 
-        # reshape to pass into RNN
-        inp = input.unsqueeze(0).unsqueeze(0)
-        x = x.unsqueeze(0)
+        activity = self._initial_activity(state, dh)
+        out = self.adapter.step(
+            input.unsqueeze(0), state.unsqueeze(0),
+            h=None if activity is None else activity.unsqueeze(0),
+        )
 
-        if h is not None:
-            h = h.unsqueeze(0)
-
-        # Get h_next for affine function
-        x_next, h_next = self.rnn(inp, x, h0=h)
-
-        out = h_next if dh else x_next
         out = self.rnn.get_region_activity(out, *self.region_list)
 
         if _jacobian_exc is None or delta_state_static is None:
             pert = (
                 out.squeeze(0)
-                + (_jacobian @ delta_state.T).T
+                + delta_state @ _jacobian.T
                 + (_jacobian_inp @ delta_input)
             )
         else:
             pert = (
                 out.squeeze(0)
-                + (_jacobian @ delta_state.T).T
-                + (_jacobian_exc @ delta_state_static)
+                + delta_state @ _jacobian.T
+                + (delta_state_static @ _jacobian_exc.T)
                 + (_jacobian_inp @ delta_input)
             )
 
@@ -155,18 +146,17 @@ class mLinearization:
     def jacobian(
         self,
         input: torch.Tensor,
-        x: torch.Tensor,
+        state: torch.Tensor,
+        *,
         excluded_regions: bool = False,
-        h: torch.Tensor | None = None,
         dh: bool = False,
         alpha_scaling: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Return Jacobians of the leaky update with respect to state and input.
+        """Return Jacobians of the update with respect to state and input.
 
         Args:
             input (torch.Tensor): Input vector at which to linearize.
-            x (torch.Tensor): Pre-activation state at which to linearize.
-            h (torch.Tensor | None): Hidden activation used when ``dh`` is ``True``.
+            state (torch.Tensor): Leaky pre-activation or Elman hidden state at which to linearize.
             excluded_regions (bool): If ``True``, return the projection from
                 excluded recurrent regions into the included region subset.
             dh (bool): If ``True``, differentiate the hidden activation output
@@ -174,58 +164,34 @@ class mLinearization:
 
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: Jacobian with respect to state
-            followed by Jacobian with respect to input.
+            followed by Jacobian with respect to input. For leaky dh=True,
+            h is evaluated at activation(state) with x held fixed.
+            alpha_scaling=True returns the actual discrete-step
+            derivatives; False divides these activity derivatives by alpha.
         """
 
         assert isinstance(excluded_regions, bool)
-        assert x.dim() == 1
+        assert state.dim() == 1
         assert input.dim() == 1
-        if h is not None:
-            assert h.dim() == 1
+        activity = self._initial_activity(state, dh)
 
-        """
-            Taking jacobian of x with respect to F
-            In this case, the form should be:
-                J_(ij)(x) = -I_(ij) + W_(ij)h'(x_j)
-        """
-
-        input = input.unsqueeze(0).unsqueeze(0)
-        x = x.unsqueeze(0)
-
-        if h is not None and not dh:
-            warnings.warn(
-                "Provided h will be ignored since dh is False. If you want to include h, set dh to True."
+        def update(inp, variable):
+            # Differentiate h independently, holding x fixed, in activity mode.
+            next_state = self.adapter.step(
+                inp.unsqueeze(0),
+                (state if activity is not None else variable).unsqueeze(0),
+                h=variable.unsqueeze(0) if activity is not None else None,
             )
+            return next_state.squeeze(0)
 
-        # Only pay attention to h if dh is true
-        # if dh is False, h will be ignored
-        if dh:
-            assert h is not None
-            h = h.unsqueeze(0)
+        _jacobian_input, _jacobian = torch.autograd.functional.jacobian(
+            update, (input, state if activity is None else activity)
+        )
 
-        # For leaky mrnn, there are three inputs and two outputs
-        if dh:
-            _, h_jacobians = torch.autograd.functional.jacobian(self.rnn, (input, x, h))
-            # unpack the tuples for x and h
-            h_jacobian_input, _, h_jacobian_h = h_jacobians
-
-            _jacobian = h_jacobian_h
-            _jacobian_input = h_jacobian_input
-        else:
-            x_jacobians, _ = torch.autograd.functional.jacobian(self.rnn, (input, x))
-            # unpack the tuples for x and h
-            x_jacobian_input, x_jacobian_x = x_jacobians
-
-            _jacobian = x_jacobian_x
-            _jacobian_input = x_jacobian_input
-
-        # Squeeze values now to get proper weight subsets
-        _jacobian = self._jac_nxd(_jacobian)
-        _jacobian_input = self._jac_nxd(_jacobian_input)
-
-        if dh and not alpha_scaling:
-            _jacobian /= self.rnn.alpha
-            _jacobian_input /= self.rnn.alpha
+        # Preserve the existing optional normalization for leaky activity.
+        if activity is not None and not alpha_scaling:
+            _jacobian = _jacobian / self.rnn.alpha
+            _jacobian_input = _jacobian_input / self.rnn.alpha
 
         if excluded_regions and len(self.static_region_list) >= 1:
             excluded_to_included = []
@@ -259,16 +225,15 @@ class mLinearization:
 
     def eigendecomposition(
         self,
-        x: torch.Tensor,
-        h: torch.Tensor | None = None,
+        state: torch.Tensor,
+        *,
         dh: bool = False,
         alpha_scaling: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute the eigendecomposition of the local Jacobian.
 
         Args:
-            x (torch.Tensor): Pre-activation state at which to linearize.
-            h (torch.Tensor | None): Hidden activation used when ``dh`` is ``True``.
+            state (torch.Tensor): Leaky pre-activation or Elman hidden state at which to linearize.
             dh (bool): If ``True``, eigendecompose the hidden-state Jacobian.
 
         Returns:
@@ -276,35 +241,16 @@ class mLinearization:
             torch.Tensor: Imag parts of eigenvalues.
             torch.Tensor: Eigenvectors stacked column-wise.
         """
-        input = x.new_zeros(self.rnn.total_num_inputs)
-        _jacobian, _ = self.jacobian(input, x, h=h, dh=dh, alpha_scaling=alpha_scaling)
+        input = state.new_zeros(self.rnn.total_num_inputs)
+        _jacobian, _ = self.jacobian(input, state, dh=dh, alpha_scaling=alpha_scaling)
         eigenvalues, eigenvectors = torch.linalg.eig(_jacobian)
 
-        # Split real and imaginary parts
-        reals = []
-        for eigenvalue in eigenvalues:
-            reals.append(eigenvalue.real.item())
-        reals = torch.tensor(reals)
+        return eigenvalues.real, eigenvalues.imag, eigenvectors
 
-        ims = []
-        for eigenvalue in eigenvalues:
-            ims.append(eigenvalue.imag.item())
-        ims = torch.tensor(ims)
-
-        return reals, ims, eigenvectors
-
-    def _jac_nxd(self, jac):
-        """
-        broadcast jacobian to nxd
-        jacobian will be nxd with a bunch of extra 1 dimensional
-        squeeze all one dims, and account for single inputs/units
-        jac should never be more than 3 dims, if so there are likely other issues
-        """
-        # Squeeze values now to get proper weight subsets
-        jac = jac.squeeze()
-
-        if jac.dim() == 0:
-            jac = jac.unsqueeze(0)
-        if jac.dim() == 1:
-            jac = jac.unsqueeze(1)
-        return jac
+    def _initial_activity(self, state, dh):
+        """Evaluate leaky activity at the supplied state for activity derivatives."""
+        if not self.adapter.is_leaky:
+            if dh:
+                warnings.warn("dh is True but network is not leaky, option is ignored", stacklevel=3)
+            return None
+        return self.rnn.activation(state) if dh else None

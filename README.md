@@ -1,4 +1,4 @@
-![mRNNTorch banner](assets/banner.svg)
+# mRNNTorch
 
 [![Documentation](https://img.shields.io/badge/docs-Read%20the%20Docs-blue)](https://mrnntorch.readthedocs.io/en/main/)
 
