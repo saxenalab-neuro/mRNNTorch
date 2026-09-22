@@ -38,6 +38,7 @@ class mRNN(mRNNBase):
         self,
         config: str = DEFAULTS_MRNN["config"],
         activation: str = DEFAULTS_MRNN["activation"],
+        softplus_beta: float = 1.0,
         noise_level_act: float = DEFAULTS_MRNN["noise_level_act"],
         noise_level_inp: float = DEFAULTS_MRNN["noise_level_inp"],
         rec_constrained: bool = DEFAULTS_MRNN["rec_constrained"],
@@ -70,6 +71,7 @@ class mRNN(mRNNBase):
         super(mRNN, self).__init__(
             config,
             activation,
+            softplus_beta,
             noise_level_act,
             noise_level_inp,
             rec_constrained,
@@ -89,7 +91,7 @@ class mRNN(mRNNBase):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Return batched initial pre-activation and activation states."""
         xn = self.initial_condition.unsqueeze(0).repeat(batch_size, 1)
-        hn = self.initial_condition.unsqueeze(0).repeat(batch_size, 1)
+        hn = self.activation(xn)
         return xn, hn
 
     def forward(

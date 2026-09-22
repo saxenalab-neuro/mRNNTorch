@@ -19,7 +19,6 @@ from mrnntorch.region.region_base import (
     DEFAULT_CONNECTIONS,
 )
 
-
 DEFAULTS_MRNN = {
     "config": None,
     "activation": "relu",
@@ -80,6 +79,7 @@ class mRNNBase(nn.Module):
         self,
         config: str = DEFAULTS_MRNN["config"],
         activation: str = DEFAULTS_MRNN["activation"],
+        softplus_beta: float = 1.0,
         noise_level_act: float = DEFAULTS_MRNN["noise_level_act"],
         noise_level_inp: float = DEFAULTS_MRNN["noise_level_inp"],
         rec_constrained: bool = DEFAULTS_MRNN["rec_constrained"],
@@ -138,6 +138,7 @@ class mRNNBase(nn.Module):
         self.sigma_recur = noise_level_act
         self.sigma_input = noise_level_inp
         self.activation_name = activation
+        self.softplus_beta = softplus_beta
         self.spectral_radius = spectral_radius
         self.config_finalize = config_finalize
         self.resevoir = resevoir
@@ -153,7 +154,7 @@ class mRNNBase(nn.Module):
         elif activation == "sigmoid":
             self.activation = nn.Sigmoid()
         elif activation == "softplus":
-            self.activation = nn.Softplus()
+            self.activation = nn.Softplus(beta=softplus_beta)
         elif activation == "linear":
             self.activation = linear
         else:
@@ -265,18 +266,14 @@ class mRNNBase(nn.Module):
             if isinstance(region, RecurrentRegion):
                 self.region_dict[idx] = region
             else:
-                raise ValueError(
-                    "Not a RecurrentRegion object, \
-                    cannot assign to recurrent region"
-                )
+                raise ValueError("Not a RecurrentRegion object, \
+                    cannot assign to recurrent region")
         elif idx in self.inp_dict:
             if isinstance(region, InputRegion):
                 self.inp_dict[idx] = region
             else:
-                raise ValueError(
-                    "Not an InputRegion object, \
-                    cannot assign to input region"
-                )
+                raise ValueError("Not an InputRegion object, \
+                    cannot assign to input region")
         else:
             raise ValueError("Index not a valid recurrent or input region")
 
@@ -317,10 +314,8 @@ class mRNNBase(nn.Module):
             learnable_bias (bool): If True, baseline firing is trainable.
         """
         if self.rec_finalized:
-            raise Exception(
-                "Recurrent connectivity already finalized, please \
-                include all regions and connections beforehand"
-            )
+            raise Exception("Recurrent connectivity already finalized, please \
+                include all regions and connections beforehand")
 
         # Create region
         self.region_dict[name] = RecurrentRegion(
@@ -354,10 +349,8 @@ class mRNNBase(nn.Module):
             sign (str): "pos" or "neg"; used to set sign mask for inputs.
         """
         if self.inp_finalized:
-            raise Exception(
-                "Input connectivity already finalized, \
-                please include all regions and connections beforehand"
-            )
+            raise Exception("Input connectivity already finalized, \
+                please include all regions and connections beforehand")
 
         # Create region
         self.inp_dict[name] = InputRegion(
@@ -387,10 +380,8 @@ class mRNNBase(nn.Module):
         """
         # Ensure that no more connections can be added if network is finalized
         if self.rec_finalized:
-            raise Exception(
-                "Recurrent connectivity already finalized, \
-                please include all regions and connections beforehand"
-            )
+            raise Exception("Recurrent connectivity already finalized, \
+                please include all regions and connections beforehand")
 
         # Add connection to specified region object
         self.region_dict[src_region].add_connection(
@@ -424,10 +415,8 @@ class mRNNBase(nn.Module):
                 None, dense mask is used.
         """
         if self.inp_finalized:
-            raise Exception(
-                "Input connectivity already finalized, \
-                please include all regions and connections beforehand"
-            )
+            raise Exception("Input connectivity already finalized, \
+                please include all regions and connections beforehand")
 
         # Add connection to specified input region object
         self.inp_dict[src_region].add_connection(
@@ -771,9 +760,9 @@ class mRNNBase(nn.Module):
         states_a = torch.flatten(states_a, end_dim=-2)
         states_b = torch.flatten(states_b, end_dim=-2)
 
-        assert set(region_list_a).isdisjoint(region_list_b), (
-            "region lists must be disjoint"
-        )
+        assert set(region_list_a).isdisjoint(
+            region_list_b
+        ), "region lists must be disjoint"
 
         # Gather batches of grids with trial activity at each timestep
         region_a_idx = 0

@@ -95,39 +95,50 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
         states: torch.Tensor,
         n_inits: int,
         *args,
+        static_state_t: int | None = None,
         noise_scale: float = 0.0,
         excluded_static_regions: list = [],
     ):
+
         states = self._broadcast_nxd(states, tile_n=1)
 
         # get included region states
         included_region_states = self.rnn.get_region_activity(states, *args)
-        included_region_states = self.sample_states(
+        init_states = self.sample_states(
             included_region_states, n_inits=n_inits, noise_scale=noise_scale
         )
 
         # get static regions states
         non_static_regions = [*args, *excluded_static_regions]
         static_regions = self.rnn.get_excluded_hid_regions(*non_static_regions)
-        static_region_states = self.rnn.get_region_activity(states, *static_regions)
-        static_region_states = self.sample_states(
-            static_region_states, n_inits=n_inits, noise_scale=noise_scale
-        )
+        if len(static_regions) != 0 and static_state_t is not None:
+            static_region_states = self.rnn.get_region_activity(states, *static_regions)
+            static_region_states = static_region_states[static_state_t].repeat(
+                n_inits, 1
+            )
+        elif len(static_regions) != 0 and static_state_t is None:
+            static_region_states = self.rnn.get_region_activity(states, *static_regions)
+            static_region_states = self.sample_states(
+                static_region_states, n_inits=n_inits, noise_scale=noise_scale
+            )
 
         # get excluded region states (zeros)
-        excluded_region_size = self.rnn.get_region_sizes(*excluded_static_regions)
-        excluded_region_states = torch.zeros(size=(n_inits, excluded_region_size))
+        if len(excluded_static_regions) != 0:
+            excluded_region_size = self.rnn.get_region_sizes(*excluded_static_regions)
+            excluded_region_states = torch.zeros(size=(n_inits, excluded_region_size))
 
         # combine all states in correct order
-        included_static_states = self.rnn.combine_states(
-            included_region_states, static_region_states, list(args), static_regions
-        )
-        init_states = self.rnn.combine_states(
-            included_static_states,
-            excluded_region_states,
-            [*args, *static_regions],
-            excluded_static_regions,
-        )
+        if len(static_regions) != 0:
+            init_states = self.rnn.combine_states(
+                init_states, static_region_states, list(args), static_regions
+            )
+        if len(excluded_static_regions) != 0:
+            init_states = self.rnn.combine_states(
+                init_states,
+                excluded_region_states,
+                [*args, *static_regions],
+                excluded_static_regions,
+            )
 
         return init_states
 
@@ -186,7 +197,9 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
         # this is because Fxstar is h_next, so unique will be performed on activation
         # This is a workaround, however keeping xstar as x is good for
         # when a user might want to pass the fixed point to the mrnn again (i.e. during linearization)
-        unique_fps = all_fps.get_unique(use_F_xstar=self.adapter.is_leaky and optimize_h)
+        unique_fps = all_fps.get_unique(
+            use_F_xstar=self.adapter.is_leaky and optimize_h
+        )
 
         self._print_if_verbose("\tIdentified %d unique fixed points." % unique_fps.n)
 
@@ -205,7 +218,9 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
                 n_rounds=n_rounds_q_opt,
             )
             # Filter out duplicates after from the second optimization round
-            unique_fps = unique_fps.get_unique(use_F_xstar=self.adapter.is_leaky and optimize_h)
+            unique_fps = unique_fps.get_unique(
+                use_F_xstar=self.adapter.is_leaky and optimize_h
+            )
 
         # Optionally subselect from the unique fixed points (e.g., for
         # computational savings when not all are needed.)
@@ -416,7 +431,11 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
         # Begin optimization
         while True:
             state = torch.cat(region_tensor_list, dim=-1)
-            leaky_h = self.rnn.activation(state) if self.adapter.is_leaky and optimize_h else None
+            leaky_h = (
+                self.rnn.activation(state)
+                if self.adapter.is_leaky and optimize_h
+                else None
+            )
             F_x_1xbxd = self.adapter.step(
                 ext_inp,
                 state,
@@ -490,7 +509,11 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
         full_fp = torch.cat(region_tensor_list, dim=-1)
 
         with torch.no_grad():
-            leaky_h = self.rnn.activation(full_fp) if self.adapter.is_leaky and optimize_h else None
+            leaky_h = (
+                self.rnn.activation(full_fp)
+                if self.adapter.is_leaky and optimize_h
+                else None
+            )
             F_x_1xbxd = self.adapter.step(
                 ext_inp,
                 full_fp,

@@ -8,7 +8,6 @@ import torch
 from typing import Tuple
 from mrnntorch.mrnn.mrnn_base import mRNNBase
 
-
 DEFAULTS_MRNN = {
     "config": None,
     "activation": "relu",
@@ -36,6 +35,7 @@ class ElmanmRNN(mRNNBase):
         self,
         config: str = DEFAULTS_MRNN["config"],
         activation: str = DEFAULTS_MRNN["activation"],
+        softplus_beta: float = 1.0,
         noise_level_act: float = DEFAULTS_MRNN["noise_level_act"],
         noise_level_inp: float = DEFAULTS_MRNN["noise_level_inp"],
         rec_constrained: bool = DEFAULTS_MRNN["rec_constrained"],
@@ -64,6 +64,7 @@ class ElmanmRNN(mRNNBase):
         super(ElmanmRNN, self).__init__(
             config,
             activation,
+            softplus_beta,
             noise_level_act,
             noise_level_inp,
             rec_constrained,
@@ -111,27 +112,23 @@ class ElmanmRNN(mRNNBase):
         """
         assert len(self.region_dict) > 0
         assert len(self.inp_dict) > 0
-        assert self.rec_finalized or self.inp_finalized, (
-            "Recurrent or input weights are not finalized, \
+        assert (
+            self.rec_finalized or self.inp_finalized
+        ), "Recurrent or input weights are not finalized, \
             call finalize_connectivity() in your custom model definition"
-        )
 
         if inp.dim() != 3:
-            raise Exception(
-                "input must be 3 dimensional, \
+            raise Exception("input must be 3 dimensional, \
                             [batch, time, units] for batch_first=True, \
-                            and [time, batch, units] otherwise]."
-            )
+                            and [time, batch, units] otherwise].")
         if h0.dim() != 2:
             raise Exception("x0 must be 2 dimensional, [batch, units].")
 
         if stim_input is not None:
             if stim_input.dim() != 3:
-                raise Exception(
-                    "stim_input must be 3 dimensional, \
+                raise Exception("stim_input must be 3 dimensional, \
                                 [batch, time, units] for batch_first=True, \
-                                and [time, batch, units] otherwise]."
-                )
+                                and [time, batch, units] otherwise].")
 
         if W_rec is None:
             # Apply Dale's Law if constrained
