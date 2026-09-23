@@ -57,5 +57,6 @@ intersphinx_mapping = {
 # -- Options for HTML output -------------------------------------------------
 
 html_theme = "sphinx_rtd_theme"
-html_static_path = ["_static"]
+# No custom static assets are shipped; Git does not preserve empty directories.
+html_static_path = []
 html_title = "mRNNTorch Documentation"
