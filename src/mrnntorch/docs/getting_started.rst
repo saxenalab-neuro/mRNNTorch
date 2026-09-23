@@ -8,7 +8,11 @@ Install the package from the repository root in editable mode while developing:
 
 .. code-block:: bash
 
-   pip install -e .
+   python -m pip install -e .
+   python -m pip install "git+https://github.com/saxenalab-neuro/RNNToolkit.git"
+
+The shared analysis tools use RNNToolkit. The documentation requirements also
+install it when building the API reference on Read the Docs.
 
 Minimal Leaky mRNN
 ------------------

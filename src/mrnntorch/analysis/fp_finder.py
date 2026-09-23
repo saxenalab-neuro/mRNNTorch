@@ -1,4 +1,4 @@
-"""Fixed-point search utilities for leaky mRNN dynamics."""
+"""Fixed-point search utilities for leaky and Elman mRNN dynamics."""
 
 import torch
 import numpy as np
@@ -14,7 +14,7 @@ import warnings
 
 
 class mFixedPointFinder(FixedPointFinderBase[mRNN]):
-    """Fixed-point finder specialized for leaky :class:`mRNN` dynamics."""
+    """Fixed-point finder for leaky pre-activation and Elman hidden states."""
 
     def __init__(
         self,
@@ -35,10 +35,10 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
         super_verbose: bool = False,
         n_iters_per_print_update: int = 100,
     ):
-        """Initialize fixed-point search hyperparameters for a leaky mRNN.
+        """Initialize fixed-point search hyperparameters for either mRNN model.
 
         Args:
-            rnn (mRNN): Network whose fixed points will be optimized.
+            rnn (mRNN | ElmanmRNN): Network whose fixed points will be optimized.
             lr_init (float): Initial optimizer learning rate.
             tol_q (float): Absolute fixed-point objective tolerance.
             tol_dq (float): Per-step objective improvement tolerance.
@@ -152,32 +152,25 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
         W_rec: torch.Tensor | None = None,
         n_rounds_q_opt: int = 1,
     ) -> tuple[FixedPointCollection, FixedPointCollection]:
-        """Finds RNN fixed points and the Jacobians at the fixed points.
+        """Search for stationary states at constant external input.
 
         Args:
-            initial_states: Tensor specifying the initial
-            states of the RNN, from which the optimization will search for
-            fixed points.
-
-            ext_inputs: external inputs to the RNN
-            stim_inp: Additional stimulus input to the network
-            W_rec: Fixed weight matrix to replace self.mrnn.W_rec in forward pass
-            W_rec: Fixed weight matrix to replace self.mrnn.W_inp in forward pass
-            n_rounds_q_opt: Number of rounds to run extra iterations on q outliers
+            initial_states: Initial guesses, with leaky pre-activation or Elman
+                activity in the last dimension. Leading dimensions are flattened.
+            ext_inputs: Shared input vector [I] or input vectors [N, I].
+            *args: Optional names of recurrent regions to optimize.
+            optimize_h: For leaky models, compare next activity with activation(x)
+                while still optimizing x. Ignored for Elman models.
+            stim_inp: Optional additive stimulus vector [H] or batch [N, H].
+            W_rec: Optional effective recurrent weight matrix override.
+            n_rounds_q_opt: Number of extra rounds for high-residual outliers,
+                when do_rerun_q_outliers is enabled.
 
         Returns:
-            unique_fps: A FixedPoints object containing the set of unique
-            fixed points after optimizing from all initial_states. Two fixed
-            points are considered unique if all absolute element-wise
-            differences are less than tol_unique AND the corresponding inputs
-            are unique following the same criteria. See FixedPoints.py for
-            additional detail.
-
-            all_fps: A FixedPoints object containing the likely redundant set
-            of fixed points (and associated metadata) resulting from ALL
-            initializations in initial_states (i.e., the full set of fixed
-            points before filtering out putative duplicates to yield
-            unique_fps).
+            tuple[FixedPointCollection, FixedPointCollection]: Unique candidates
+            and all candidates. xstar stores the model's analysis state. For
+            leaky optimize_h=True, F_xstar stores activity and xstar still stores x.
+            Jacobians are computed separately with mLinearization.
         """
 
         if optimize_h and not self.adapter.is_leaky:
@@ -351,7 +344,6 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
             ext_inp (torch.Tensor): Constant external inputs paired with each state.
             *args (str): Optional recurrent regions to optimize.
             optimize_h (bool): whether to define the loss using h_next instead of x_next
-            x_l2_scalaar (float): how to scale l2 regularization on x, only used if optimize_h
             stim_inp (torch.Tensor | None): Optional stimulus input during optimization.
             W_rec (torch.Tensor | None): Optional recurrent weight matrix override.
 

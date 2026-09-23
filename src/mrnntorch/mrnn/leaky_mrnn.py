@@ -9,23 +9,6 @@ from typing import Tuple
 from mrnntorch.mrnn.mrnn_base import mRNNBase
 
 
-DEFAULTS_MRNN = {
-    "config": None,
-    "activation": "relu",
-    "noise_level_act": 0.01,
-    "noise_level_inp": 0.01,
-    "rec_constrained": True,
-    "inp_constrained": True,
-    "batch_first": True,
-    "spectral_radius": None,
-    "config_finalize": True,
-    "device": "cuda",
-    "dt": 10,
-    "resevoir": False,
-    "tau": 100,
-}
-
-
 def linear(x):
     """Return ``x`` unchanged."""
     return x
@@ -36,20 +19,20 @@ class mRNN(mRNNBase):
 
     def __init__(
         self,
-        config: str = DEFAULTS_MRNN["config"],
-        activation: str = DEFAULTS_MRNN["activation"],
+        config: str = None,
+        activation: str = "relu",
         softplus_beta: float = 1.0,
-        noise_level_act: float = DEFAULTS_MRNN["noise_level_act"],
-        noise_level_inp: float = DEFAULTS_MRNN["noise_level_inp"],
-        rec_constrained: bool = DEFAULTS_MRNN["rec_constrained"],
-        inp_constrained: bool = DEFAULTS_MRNN["inp_constrained"],
-        batch_first: bool = DEFAULTS_MRNN["batch_first"],
-        spectral_radius: float = DEFAULTS_MRNN["spectral_radius"],
-        config_finalize: bool = DEFAULTS_MRNN["config_finalize"],
-        device: str = DEFAULTS_MRNN["device"],
-        dt: float = DEFAULTS_MRNN["dt"],
-        tau: float = DEFAULTS_MRNN["tau"],
-        resevoir: bool = DEFAULTS_MRNN["resevoir"],
+        noise_level_act: float = 0.01,
+        noise_level_inp: float = 0.01,
+        rec_constrained: bool = True,
+        inp_constrained: bool = True,
+        batch_first: bool = True,
+        spectral_radius: float | None = None,
+        config_finalize: bool = True,
+        device: str = "cuda",
+        resevoir: bool = False,
+        dt: float = 10,
+        tau: float = 100,
     ):
         """Initialize a leaky multi-regional RNN.
 
@@ -69,17 +52,17 @@ class mRNN(mRNNBase):
             resevoir (bool): If True, freeze recurrent weights during training.
         """
         super(mRNN, self).__init__(
-            config,
-            activation,
-            softplus_beta,
-            noise_level_act,
-            noise_level_inp,
-            rec_constrained,
-            inp_constrained,
-            batch_first,
-            spectral_radius,
-            config_finalize,
-            device,
+            config=config,
+            activation=activation,
+            softplus_beta=softplus_beta,
+            noise_level_act=noise_level_act,
+            noise_level_inp=noise_level_inp,
+            rec_constrained=rec_constrained,
+            inp_constrained=inp_constrained,
+            batch_first=batch_first,
+            spectral_radius=spectral_radius,
+            config_finalize=config_finalize,
+            device=device,
             resevoir=resevoir,
         )
         self.dt = dt
@@ -123,27 +106,23 @@ class mRNN(mRNNBase):
         """
         assert len(self.region_dict) > 0
         assert len(self.inp_dict) > 0
-        assert self.rec_finalized or self.inp_finalized, (
-            "Recurrent or input weights are not finalized, \
+        assert (
+            self.rec_finalized or self.inp_finalized
+        ), "Recurrent or input weights are not finalized, \
             call finalize_connectivity() in your custom model definition"
-        )
 
         if inp.dim() != 3:
-            raise Exception(
-                "input must be 3 dimensional, \
+            raise Exception("input must be 3 dimensional, \
                             [batch, time, units] for batch_first=True, \
-                            and [time, batch, units] otherwise]."
-            )
+                            and [time, batch, units] otherwise].")
         if x0.dim() != 2:
             raise Exception("x0 must be 2 dimensional, [batch, units].")
 
         if stim_input is not None:
             if stim_input.dim() != 3:
-                raise Exception(
-                    "stim_input must be 3 dimensional, \
+                raise Exception("stim_input must be 3 dimensional, \
                                 [batch, time, units] for batch_first=True, \
-                                and [time, batch, units] otherwise]."
-                )
+                                and [time, batch, units] otherwise].")
 
         if W_rec is None:
             # Apply Dale's Law if constrained

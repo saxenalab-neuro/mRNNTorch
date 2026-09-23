@@ -5,11 +5,9 @@ Written for Python 3.8.17 and Pytorch 2.0.1
 Please direct correspondence to mgolub@cs.washington.edu
 """
 
-import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import numpy as np
 
 from model import LeakmRNN, EmRNN
 from flip_flop_data import FlipFlopData
@@ -29,7 +27,7 @@ def train_FlipFlop(model_type):
     # Data specifications
     n_bits = 3
     n_train = 512
-    epochs = 5000
+    epochs = 5_000
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Model hyperparameters
@@ -41,9 +39,9 @@ def train_FlipFlop(model_type):
     train_data = data_gen.generate_data(n_trials=n_train)
 
     if model_type == "leaky":
-        model = LeakmRNN(n_bits, n_exc, n_inhib, n_bits).to(device)
+        model = LeakmRNN(n_bits, n_exc, n_inhib, n_bits, device=device).to(device)
     elif model_type == "elman":
-        model = EmRNN(n_bits, n_exc, n_inhib, n_bits).to(device)
+        model = EmRNN(n_bits, n_exc, n_inhib, n_bits, device=device).to(device)
     else:
         raise ValueError
 
@@ -60,7 +58,7 @@ def train_FlipFlop(model_type):
         # forward pass through model
         if model_type == "leaky":
             x0 = torch.zeros(size=(n_train, num_units)).to(device)
-            h0 = torch.zeros(size=(n_train, num_units)).to(device)
+            h0 = model.rnn.activation(x0)
             out, _, _ = model(input, x0, h0)
         elif model_type == "elman":
             h0 = torch.zeros(size=(n_train, num_units)).to(device)

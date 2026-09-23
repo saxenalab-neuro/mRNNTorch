@@ -33,7 +33,7 @@ You can also mix both approaches, then finalize connectivity:
 
 ```python
 import torch.nn as nn
-from mrnntorch.mRNN import mRNN
+from mrnntorch import mRNN
 
 class MyMRNN(nn.Module):
     def __init__(self, config_path: str):

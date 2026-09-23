@@ -1,11 +1,21 @@
 # Configuration file for the Sphinx documentation builder.
 
+import os
+import sys
+from pathlib import Path
+
+# Import this checkout and allow autodoc to load plotting modules without a display.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+os.environ.setdefault("MPLBACKEND", "Agg")
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+
 # -- Project information -----------------------------------------------------
 
 project = "mRNNTorch"
 copyright = "2026, John Lazzari"
 author = "John Lazzari"
-release = "0.0.1"
+release = "0.1.0"
 
 # -- General configuration ---------------------------------------------------
 

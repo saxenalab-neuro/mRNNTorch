@@ -8,20 +8,6 @@ import torch
 from typing import Tuple
 from mrnntorch.mrnn.mrnn_base import mRNNBase
 
-DEFAULTS_MRNN = {
-    "config": None,
-    "activation": "relu",
-    "noise_level_act": 0.01,
-    "noise_level_inp": 0.01,
-    "rec_constrained": True,
-    "inp_constrained": True,
-    "batch_first": True,
-    "spectral_radius": None,
-    "config_finalize": True,
-    "device": "cuda",
-    "resevoir": False,
-}
-
 
 def linear(x):
     """Return ``x`` unchanged."""
@@ -33,18 +19,18 @@ class ElmanmRNN(mRNNBase):
 
     def __init__(
         self,
-        config: str = DEFAULTS_MRNN["config"],
-        activation: str = DEFAULTS_MRNN["activation"],
+        config: str = None,
+        activation: str = "relu",
         softplus_beta: float = 1.0,
-        noise_level_act: float = DEFAULTS_MRNN["noise_level_act"],
-        noise_level_inp: float = DEFAULTS_MRNN["noise_level_inp"],
-        rec_constrained: bool = DEFAULTS_MRNN["rec_constrained"],
-        inp_constrained: bool = DEFAULTS_MRNN["inp_constrained"],
-        batch_first: bool = DEFAULTS_MRNN["batch_first"],
-        spectral_radius: float = DEFAULTS_MRNN["spectral_radius"],
-        config_finalize: bool = DEFAULTS_MRNN["config_finalize"],
-        device: str = DEFAULTS_MRNN["device"],
-        resevoir: bool = DEFAULTS_MRNN["resevoir"],
+        noise_level_act: float = 0.01,
+        noise_level_inp: float = 0.01,
+        rec_constrained: bool = True,
+        inp_constrained: bool = True,
+        batch_first: bool = True,
+        spectral_radius: float | None = None,
+        config_finalize: bool = True,
+        device: str = "cuda",
+        resevoir: bool = False,
     ):
         """Initialize an Elman-style multi-regional RNN.
 
@@ -62,17 +48,17 @@ class ElmanmRNN(mRNNBase):
             resevoir (bool): If True, freeze recurrent weights during training.
         """
         super(ElmanmRNN, self).__init__(
-            config,
-            activation,
-            softplus_beta,
-            noise_level_act,
-            noise_level_inp,
-            rec_constrained,
-            inp_constrained,
-            batch_first,
-            spectral_radius,
-            config_finalize,
-            device,
+            config=config,
+            activation=activation,
+            softplus_beta=softplus_beta,
+            noise_level_act=noise_level_act,
+            noise_level_inp=noise_level_inp,
+            rec_constrained=rec_constrained,
+            inp_constrained=inp_constrained,
+            batch_first=batch_first,
+            spectral_radius=spectral_radius,
+            config_finalize=config_finalize,
+            device=device,
             resevoir=resevoir,
         )
         self.alpha = 1

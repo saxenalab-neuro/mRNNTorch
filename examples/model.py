@@ -8,17 +8,18 @@ class LeakmRNN(nn.Module):
 
         self.rnn = mRNN(
             inp_constrained=False,
-            dt=1,
-            tau=2,
+            dt=0.9,
+            tau=1,
             spectral_radius=1,
             device=device,
             activation="tanh",
         )
+
         self.rnn.add_recurrent_region("exc", exc_units, "pos", learnable_bias=True)
         self.rnn.add_recurrent_region("inhib", inhib_units, "neg", learnable_bias=True)
         self.rnn.add_input_region("inp", inp_dim)
 
-        self.rnn.add_recurrent_connection("exc", "exc", sparsity=0.9)
+        self.rnn.add_recurrent_connection("exc", "exc")
         self.rnn.add_recurrent_connection("exc", "inhib")
         self.rnn.add_recurrent_connection("inhib", "exc")
         self.rnn.add_recurrent_connection("inhib", "inhib")

@@ -1,4 +1,4 @@
-"""Two-dimensional flow-field estimation for leaky mRNN trajectories."""
+"""Two-dimensional flow-field estimation for leaky and Elman mRNN trajectories."""
 
 import torch
 from mrnntorch.analysis.linear import mLinearization
@@ -11,7 +11,7 @@ import warnings
 
 
 class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
-    """Flow-field estimator for leaky mRNN trajectories and local linearizations."""
+    """Shared flow-field estimator for leaky and Elman mRNN dynamics."""
 
     def __init__(
         self,
@@ -30,7 +30,7 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
         """Initialize a 2D flow-field finder around a trajectory.
 
         Args:
-            rnn (mRNN): Network to analyze.
+            rnn (mRNN | ElmanmRNN): Network to analyze.
             fit_states (torch.Tensor): States used to fit the dimensionality
                 reduction used for the flow-field plane.
             num_points (int): Number of grid points along each axis.
@@ -90,7 +90,8 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
         keep their control values.
 
         Args:
-            states (torch.Tensor): Hidden activations over time [batch_size, T, N].
+            states (torch.Tensor): Full leaky x or Elman h states, with units
+                in the last dimension and arbitrary leading sample dimensions.
             input (torch.Tensor): External input sequence.
 
         Kwargs:
@@ -218,18 +219,15 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
     ) -> list:
         """Compute linearized 2D flow fields around sampled trajectory states.
 
-        Similar to :func:`flow_field`, but uses a local linear approximation (Jacobian)
-        of the dynamics around points on the trajectory instead of a full forward
-        step. Assumes no external input to the selected regions.
+        Uses a local linear approximation of the dynamics around each supplied
+        state and input. Coordinates are leaky x or Elman h.
 
         Args:
             states (torch.Tensor): Network states over time.
-            inp (torch.Tensor): External input sequence aligned with ``states``.
-            delta_inp (torch.Tensor): Input perturbations for the local linear model.
+            input (torch.Tensor): External input sequence aligned with ``states``.
+            delta_input (torch.Tensor): Input perturbations for the local linear model.
             delta_state_static (torch.Tensor | None): Perturbations for recurrent regions \
-                excluded from the reduced plane. Should be for x or h depending on dh
-            dh (bool): If ``True``, linearize hidden activations instead of
-                pre-activations.
+                excluded from the reduced plane, in the same coordinates as states.
 
         Returns:
             list: FlowField objects per sampled time.

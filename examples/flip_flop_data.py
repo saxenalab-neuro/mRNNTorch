@@ -101,7 +101,8 @@ class FlipFlopData(object):
 
     @classmethod
     def plot_trials(
-        cls, data, pred, start_time=0, stop_time=None, n_trials_plot=1, fig=None
+        cls, data, pred, start_time=0, stop_time=None, n_trials_plot=1, fig=None,
+        show=True,
     ):
         """Plots example trials, complete with input pulses, correct target
         outputs, and RNN-predicted outputs.
@@ -115,8 +116,10 @@ class FlipFlopData(object):
                 stop_time (optional): int specifying the last timestep to plot.
                 Default: n_time.
 
+                show (bool): Display the figure. Set False to save it instead.
+
         Returns:
-                None.
+                matplotlib.figure.Figure: The trial figure.
         """
 
         FIG_WIDTH = 6  # inches
@@ -158,7 +161,8 @@ class FlipFlopData(object):
             else:
                 plt.xlabel("Timestep", fontweight="bold")
 
-        cls._refresh_figs()
+        if show:
+            cls._refresh_figs()
 
         return fig
 

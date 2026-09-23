@@ -42,32 +42,52 @@ Build And Run An Elman mRNN
    h0 = rnn.batched_initial_condition(batch_size=16)
    hs = rnn(inputs, h0, noise=False)
 
+Shared Adapter And Fixed-Point Search
+-------------------------------------
+
+The following snippets continue with the Elman model above. For the leaky
+model, use its ``xs`` trajectory in place of ``hs`` as the analysis state.
+The analysis class names are identical for both models.
+
+.. code-block:: python
+
+   from mrnntorch.analysis import mRNNAdapter, mFixedPointFinder
+
+   adapter = mRNNAdapter(rnn)
+   state = adapter.batched_initial_condition(batch_size=16)
+   next_state = adapter.step(inputs[:, 0], state)
+   next_activity = adapter.activity(next_state)
+
+   finder = mFixedPointFinder(rnn, max_iters=100, verbose=False)
+   initial_states = finder.sample_states(hs.detach(), n_inits=32, noise_scale=0.1)
+   unique_fps, all_fps = finder.find_fixed_points(initial_states, torch.zeros(2))
+
 Region-Specific Flow Field
 --------------------------
 
 .. code-block:: python
 
-   from mrnntorch.analysis import emFlowFieldFinder
+   from mrnntorch.analysis import mFlowFieldFinder
 
-   finder = emFlowFieldFinder(
+   finder = mFlowFieldFinder(
        rnn,
        num_points=25,
        x_offset=5,
        y_offset=5,
-       fit_states=hs.reshape(-1, hs.shape[-1]),
+       fit_states=hs.detach().reshape(-1, hs.shape[-1]),
        region_list=["ctx"],
        excluded_static_regions=[],
    )
-   fields = finder.find_nonlinear_flow(hs[:, :1], inputs[:, :1])
+   fields = finder.find_nonlinear_flow(hs.detach()[:, :1], inputs[:, :1])
 
 Linearization Around A State
 ----------------------------
 
 .. code-block:: python
 
-   from mrnntorch.analysis import emLinearization
+   from mrnntorch.analysis import mLinearization
 
-   lin = emLinearization(rnn, "ctx")
+   lin = mLinearization(rnn, "ctx")
    jacobian, input_jacobian = lin.jacobian(inputs[0, 0], hs[0, 0])
    real_parts, imaginary_parts, eigenvectors = lin.eigendecomposition(hs[0, 0])
 
@@ -81,10 +101,37 @@ Interactive Flow Visualizer
    visualizer = emFlowFieldVisualizer(
        rnn,
        num_points=25,
-       fit_states=hs.reshape(-1, hs.shape[-1]),
+       fit_states=hs.detach().reshape(-1, hs.shape[-1]),
        region_list=["ctx"],
        flow_type="nonlinear",
    )
    visualizer.visualize(inputs, hs)
 
-See the ``examples/`` directory in the repository for runnable scripts.
+Runnable Analysis Scripts
+-------------------------
+
+From the repository root, run:
+
+.. code-block:: bash
+
+   python examples/analysis_leaky.py
+   python examples/analysis_elman.py
+
+Each script loads its matching flip-flop checkpoint, collects trajectories,
+and calls separate analysis functions from ``main()``. Edit the settings near
+the top of the script; there are no command-line arguments. Figures are saved
+under ``examples/results/{leaky,elman}/`` in folders for trials, constrained
+weights, region PCA, fixed points, stability, and linear/nonlinear flow.
+The leaky script also compares activity-residual fixed points. Images have
+descriptive filenames and are overwritten on reruns.
+
+Building The Documentation
+--------------------------
+
+Install the documentation dependencies and build from the repository root:
+
+.. code-block:: bash
+
+   python -m pip install -r src/mrnntorch/docs/requirements.txt
+   python -m pip install -e .
+   python -m sphinx -b html -W --keep-going src/mrnntorch/docs /tmp/mrnntorch-docs
