@@ -98,9 +98,20 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
         static_state_t: int | None = None,
         noise_scale: float = 0.0,
         excluded_static_regions: list = [],
+        static_states: torch.Tensor | None = None,
     ):
+        """Sample selected regions from states, optionally using a separate static trial.
+
+        static_states supplies full states for the held regions. When provided,
+        static_state_t indexes this separate source, while selected-region
+        initial conditions are still sampled from all of states.
+        """
 
         states = self._broadcast_nxd(states, tile_n=1)
+        static_states = (
+            states if static_states is None
+            else self._broadcast_nxd(static_states, tile_n=1)
+        )
 
         # get included region states
         included_region_states = self.rnn.get_region_activity(states, *args)
@@ -112,12 +123,12 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
         non_static_regions = [*args, *excluded_static_regions]
         static_regions = self.rnn.get_excluded_hid_regions(*non_static_regions)
         if len(static_regions) != 0 and static_state_t is not None:
-            static_region_states = self.rnn.get_region_activity(states, *static_regions)
+            static_region_states = self.rnn.get_region_activity(static_states, *static_regions)
             static_region_states = static_region_states[static_state_t].repeat(
                 n_inits, 1
             )
         elif len(static_regions) != 0 and static_state_t is None:
-            static_region_states = self.rnn.get_region_activity(states, *static_regions)
+            static_region_states = self.rnn.get_region_activity(static_states, *static_regions)
             static_region_states = self.sample_states(
                 static_region_states, n_inits=n_inits, noise_scale=noise_scale
             )

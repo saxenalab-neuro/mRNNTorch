@@ -29,11 +29,12 @@ class LeakmRNN(nn.Module):
 
         self.rnn.finalize_connectivity()
 
-        self.out_layer = nn.Linear(self.rnn.total_num_units, out_dim)
+        self.out_layer = nn.Linear(exc_units, out_dim)
 
     def forward(self, input, x, h):
         x, h = self.rnn(input, x, h, noise=False)
-        out = self.out_layer(h)
+        r_h = self.rnn.get_region_activity(h, "exc")
+        out = self.out_layer(r_h)
         return out, x, h
 
 
@@ -58,9 +59,10 @@ class EmRNN(nn.Module):
 
         self.rnn.finalize_connectivity()
 
-        self.out_layer = nn.Linear(self.rnn.total_num_units, out_dim)
+        self.out_layer = nn.Linear(exc_units, out_dim)
 
     def forward(self, input, hx):
         h = self.rnn(input, hx, noise=False)
-        out = self.out_layer(h)
+        r_h = self.rnn.get_region_activity(h, "exc")
+        out = self.out_layer(r_h)
         return out, h

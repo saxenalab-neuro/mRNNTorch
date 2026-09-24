@@ -238,3 +238,31 @@ def test_fp_optimization_smoke_e():
     assert fps.xstar.shape == (2, 1)
     assert fps.inputs.shape == (2, 1)
     assert fps.F_xstar.shape == (2, 1)
+
+
+@pytest.mark.parametrize("model_class", [mRNN, ElmanmRNN])
+@pytest.mark.parametrize("region", ["exc", "inhib"])
+def test_region_initial_states_separates_sampling_pool_and_static_trial(model_class, region):
+    model = model_class(device="cpu", activation="tanh")
+    model.add_recurrent_region("exc", 1, "pos")
+    model.add_recurrent_region("inhib", 1, "neg")
+    model.add_input_region("inp", 1)
+    for source in ("exc", "inhib"):
+        for target in ("exc", "inhib"):
+            model.add_recurrent_connection(source, target)
+        model.add_input_connection("inp", source)
+    model.finalize_connectivity()
+    finder = mFixedPointFinder(model, verbose=False, random_seed=0)
+    pool = torch.tensor([[[1., 11.], [2., 12.]], [[3., 13.], [4., 14.]]])
+    short_trial = torch.tensor([[101., 201.], [102., 202.], [103., 203.]])
+    selected = 0 if region == "exc" else 1
+    held = 1 - selected
+    samples = finder.region_initial_states(
+        pool, 128, region, static_states=short_trial, static_state_t=2,
+    )
+    # Both long trials supply guesses; none come from the short trial.
+    assert set(samples[:, selected].tolist()) == set(pool[..., selected].flatten().tolist())
+    torch.testing.assert_close(samples[:, held], short_trial[2, held].expand(128))
+    # Existing callers can still use a single source for both purposes.
+    legacy = finder.region_initial_states(pool, 8, region, static_state_t=1)
+    torch.testing.assert_close(legacy[:, held], pool.reshape(-1, 2)[1, held].expand(8))
