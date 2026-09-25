@@ -2,4 +2,4 @@ torch
 numpy
 scikit-learn
 matplotlib>=3.5
-pygame
+pygamepydantic>=2

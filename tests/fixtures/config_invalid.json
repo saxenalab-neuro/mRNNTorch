@@ -1,0 +1,6 @@
+{
+  "recurrent_regions": [{"name": "r1", "num_units": "2"}],
+  "recurrent_connections": [
+    {"src_region": "r1", "dst_region": "r1", "sparsity": 1.5}
+  ]
+}

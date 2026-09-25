@@ -7,7 +7,6 @@ initialization."""
 import torch
 import torch.nn as nn
 import numpy as np
-import json
 from typing import Tuple
 from collections import OrderedDict
 from mrnntorch.region.region_base import Region
@@ -18,6 +17,7 @@ from mrnntorch.region.region_base import (
     DEFAULT_REGION_BASE,
     DEFAULT_CONNECTIONS,
 )
+from mrnntorch.mrnn.config_check import mRNNConfig
 
 
 def linear(x: torch.Tensor) -> torch.Tensor:
@@ -154,14 +154,9 @@ class mRNNBase(nn.Module):
         if config is not None:
             # Load and process configuration
             with open(config, "r") as f:
-                config_file = json.load(f)
+                validated = mRNNConfig.model_validate_json(f.read(), strict=True)
 
-            # Default everything to empty dict
-            # Nothing inherently needs to be specified and can instead be created in custom network
-            config_file.setdefault("recurrent_regions", {})
-            config_file.setdefault("input_regions", {})
-            config_file.setdefault("recurrent_connections", {})
-            config_file.setdefault("input_connections", {})
+            config_file = validated.model_dump()
 
             """
                 Configuration file protocol:
@@ -183,9 +178,6 @@ class mRNNBase(nn.Module):
                     Additionally, the config file itself defaults to None, which would then imply the user needs to
                     manually enter all regions and connections in the custom model.
             """
-
-            # Generate network structure
-            self._create_def_values(config_file)
 
             if len(config_file["recurrent_regions"]) >= 1:
                 # Generate recurrent regions
@@ -992,47 +984,6 @@ class mRNNBase(nn.Module):
             size=(batch_shape, self.total_num_inputs), device=self.device
         )
         return perturb_inp
-
-    def _create_def_values(self, config: dict):
-        """Generate default values for configuration
-
-        Args:
-            config (json): Network configuration file
-        """
-
-        # Set default values for recurrent region connections
-        for i, region in enumerate(config["recurrent_regions"]):
-            # Go through all possible default options in default dict
-            for param in DEFAULT_REC_REGIONS:
-                # If the parameter is not specified by the user in the configuration...
-                if param not in region:
-                    # If parameter is name, add the index to ensure unique naming
-                    if param == "name":
-                        region[param] = DEFAULT_REC_REGIONS[param] + str(i)
-                    # Otherwise, default the parameter
-                    else:
-                        region[param] = DEFAULT_REC_REGIONS[param]
-
-        # Set default values for recurrent region connections
-        for connection in config["recurrent_connections"]:
-            for param in DEFAULT_CONNECTIONS:
-                if param not in connection:
-                    connection[param] = DEFAULT_CONNECTIONS[param]
-
-        # Set default values for input regions
-        for i, region in enumerate(config["input_regions"]):
-            for param in DEFAULT_REGION_BASE:
-                if param not in region:
-                    if param == "name":
-                        region[param] = DEFAULT_REGION_BASE[param] + str(i)
-                    else:
-                        region[param] = DEFAULT_REGION_BASE[param]
-
-        # Set default values for input region connections
-        for connection in config["input_connections"]:
-            for param in DEFAULT_CONNECTIONS:
-                if param not in connection:
-                    connection[param] = DEFAULT_CONNECTIONS[param]
 
     def _gen_region_mask(self, region: str) -> torch.Tensor:
         """

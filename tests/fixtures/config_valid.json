@@ -1,0 +1,13 @@
+{
+  "recurrent_regions": [
+    {"name": "r1", "num_units": 2, "base_firing": 0.5},
+    {"name": "r2", "num_units": 3, "sign": "neg"}
+  ],
+  "input_regions": [{"name": "i1", "num_units": 4}],
+  "recurrent_connections": [
+    {"src_region": "r1", "dst_region": "r2", "sparsity": 0.25}
+  ],
+  "input_connections": [
+    {"src_region": "i1", "dst_region": "r1"}
+  ]
+}

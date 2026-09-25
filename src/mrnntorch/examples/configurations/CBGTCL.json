@@ -194,7 +194,6 @@
         "src_region: str (must be a recurrent region!)",
         "dst_region: str",
         "sparsity: float",
-        "sign: str",
         "]"
     ],
 
