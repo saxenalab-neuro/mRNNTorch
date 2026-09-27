@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "InputConnectionConfig": {
+      "properties": {
+        "src_region": {
+          "title": "Src Region",
+          "type": "string"
+        },
+        "dst_region": {
+          "title": "Dst Region",
+          "type": "string"
+        },
+        "sparsity": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sparsity"
+        }
+      },
+      "required": [
+        "src_region",
+        "dst_region"
+      ],
+      "title": "InputConnectionConfig",
+      "type": "object"
+    },
+    "InputRegionConfig": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "num_units": {
+          "exclusiveMinimum": 0,
+          "title": "Num Units",
+          "type": "integer"
+        },
+        "sign": {
+          "default": "pos",
+          "title": "Sign",
+          "type": "string"
+        },
+        "device": {
+          "default": "cuda",
+          "title": "Device",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "num_units"
+      ],
+      "title": "InputRegionConfig",
+      "type": "object"
+    },
+    "RecurrentConnectionConfig": {
+      "properties": {
+        "src_region": {
+          "title": "Src Region",
+          "type": "string"
+        },
+        "dst_region": {
+          "title": "Dst Region",
+          "type": "string"
+        },
+        "sparsity": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sparsity"
+        }
+      },
+      "required": [
+        "src_region",
+        "dst_region"
+      ],
+      "title": "RecurrentConnectionConfig",
+      "type": "object"
+    },
+    "RecurrentRegionConfig": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "num_units": {
+          "exclusiveMinimum": 0,
+          "title": "Num Units",
+          "type": "integer"
+        },
+        "base_firing": {
+          "default": 0.0,
+          "title": "Base Firing",
+          "type": "number"
+        },
+        "init": {
+          "default": 0.0,
+          "title": "Init",
+          "type": "number"
+        },
+        "sign": {
+          "default": "pos",
+          "title": "Sign",
+          "type": "string"
+        },
+        "parent_region": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Region"
+        },
+        "learnable_bias": {
+          "default": false,
+          "title": "Learnable Bias",
+          "type": "boolean"
+        },
+        "device": {
+          "default": "cuda",
+          "title": "Device",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "num_units"
+      ],
+      "title": "RecurrentRegionConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "recurrent_regions": {
+      "items": {
+        "$ref": "#/$defs/RecurrentRegionConfig"
+      },
+      "title": "Recurrent Regions",
+      "type": "array"
+    },
+    "recurrent_connections": {
+      "items": {
+        "$ref": "#/$defs/RecurrentConnectionConfig"
+      },
+      "title": "Recurrent Connections",
+      "type": "array"
+    },
+    "input_regions": {
+      "items": {
+        "$ref": "#/$defs/InputRegionConfig"
+      },
+      "title": "Input Regions",
+      "type": "array"
+    },
+    "input_connections": {
+      "items": {
+        "$ref": "#/$defs/InputConnectionConfig"
+      },
+      "title": "Input Connections",
+      "type": "array"
+    }
+  },
+  "title": "mRNNConfig",
+  "type": "object"
+}
