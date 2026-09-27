@@ -1,15 +1,4 @@
 {
-
-    "__comment_regions": [
-        "Structure of regions key:",
-        "[",
-        "name: str",
-        "num_units: int",
-        "base_firing: float",
-        "]"
-
-    ],
-
     "recurrent_regions": [
       {
         "name": "d1",
@@ -63,17 +52,6 @@
         "sign": "neg"
       }
     ],
-
-    "__comment_connections": [
-        "Structure of connections key:",
-        "[",
-        "src_region: str",
-        "dst_region: str",
-        "sign: str (exc or inhib)",
-        "sparsity: float (between 0 and 1)",
-        "]"
-    ],
-
     "recurrent_connections": [
       {
         "src_region": "d1",
@@ -171,15 +149,6 @@
         "sparsity": 0.25
       }
     ],
-
-    "__comment_input_regions": [
-        "Structure of input_regions key:",
-        "[",
-        "name: str",
-        "num_units: int",
-        "]"
-    ],
-
     "input_regions": [
       {
         "num_units": 25,
@@ -187,16 +156,6 @@
         "sign": "pos"
       }
     ],
-
-    "__comment_input_connections": [
-        "Structure of input_connections key:",
-        "[",
-        "src_region: str (must be a recurrent region!)",
-        "dst_region: str",
-        "sparsity: float",
-        "]"
-    ],
-
     "input_connections": [
       {
         "src_region": "iti",
