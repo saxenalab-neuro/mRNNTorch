@@ -121,7 +121,8 @@ class mLinearization:
 
         activity = self._initial_activity(state, dh)
         out = self.adapter.step(
-            input.unsqueeze(0), state.unsqueeze(0),
+            input.unsqueeze(0),
+            state.unsqueeze(0),
             h=None if activity is None else activity.unsqueeze(0),
         )
 
@@ -225,6 +226,7 @@ class mLinearization:
 
     def eigendecomposition(
         self,
+        input: torch.Tensor,
         state: torch.Tensor,
         *,
         dh: bool = False,
@@ -241,7 +243,6 @@ class mLinearization:
             torch.Tensor: Imag parts of eigenvalues.
             torch.Tensor: Eigenvectors stacked column-wise.
         """
-        input = state.new_zeros(self.rnn.total_num_inputs)
         _jacobian, _ = self.jacobian(input, state, dh=dh, alpha_scaling=alpha_scaling)
         eigenvalues, eigenvectors = torch.linalg.eig(_jacobian)
 
@@ -251,6 +252,9 @@ class mLinearization:
         """Evaluate leaky activity at the supplied state for activity derivatives."""
         if not self.adapter.is_leaky:
             if dh:
-                warnings.warn("dh is True but network is not leaky, option is ignored", stacklevel=3)
+                warnings.warn(
+                    "dh is True but network is not leaky, option is ignored",
+                    stacklevel=3,
+                )
             return None
         return self.rnn.activation(state) if dh else None
