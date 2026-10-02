@@ -1,0 +1,11 @@
+   cff-version: 1.2.0
+   title: "mRNNTorch"
+   message: "If you use this software, please cite it as below."
+   authors:
+     - family-names: Lazzari
+       given-names: John
+     - family-names: Saxena
+       given-names: Shreya
+       affiliation: Yale University
+   license: MIT
+   repository-code: "https://github.com/saxenalab-neuro/mRNNTorch"
