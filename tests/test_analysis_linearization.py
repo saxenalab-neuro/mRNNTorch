@@ -156,7 +156,7 @@ def test_jacobian_matches_weight_h_r2_l():
     x_next, _ = mrnn(inp.unsqueeze(0).unsqueeze(0), x.unsqueeze(0))
     x_next = x_next.squeeze()
     dx = torch.where(x_next > 0, 1.0, 0.0)
-    jac, jac_inp = lin.jacobian(inp, x, dh=True)
+    jac, jac_inp = lin.jacobian(inp, x, dh=True, alpha_scaling=True)
     assert torch.allclose(
         jac,
         mrnn.get_weight_subset("r2", W=torch.diag(dx) @ (mrnn.alpha * mrnn.W_rec)),
@@ -169,7 +169,7 @@ def test_eigendecomposition_returns_real_imag_parts_l():
     mrnn = _build_leaky_mrnn_with_inputs()
     lin = mLinearization(mrnn)
     x = torch.zeros(3)
-    reals, ims, vecs = lin.eigendecomposition(x)
+    reals, ims, vecs = lin.eigendecomposition(torch.zeros(1), x)
     # Eigenvectors are returned column-wise for a square matrix.
     assert vecs.shape == (3, 3)
     assert len(reals) == 3
@@ -235,7 +235,7 @@ def test_eigendecomposition_returns_real_imag_parts_e():
     mrnn = _build_elman_mrnn_with_inputs()
     lin = mLinearization(mrnn)
     x = torch.zeros(3)
-    reals, ims, vecs = lin.eigendecomposition(x)
+    reals, ims, vecs = lin.eigendecomposition(torch.zeros(1), x)
     # Eigenvectors are returned column-wise for a square matrix.
     assert vecs.shape == (3, 3)
     assert len(reals) == 3
@@ -253,7 +253,8 @@ def test_jacobian_requires_1d_x_e():
 @pytest.mark.parametrize("model_type", [mRNN, ElmanmRNN])
 @pytest.mark.parametrize("batch_first", [True, False])
 @pytest.mark.parametrize("activity_mode", [True, False])
-def test_shared_linearization_matches_native_jacobian(model_type, batch_first, activity_mode):
+@pytest.mark.parametrize("stimulated", [True, False])
+def test_shared_linearization_matches_native_jacobian(model_type, batch_first, activity_mode, stimulated):
     builder = (
         _build_leaky_mrnn_with_inputs if model_type is mRNN
         else _build_elman_mrnn_with_inputs
@@ -265,6 +266,8 @@ def test_shared_linearization_matches_native_jacobian(model_type, batch_first, a
     inp = torch.tensor([0.3])
     dh = activity_mode and model_type is mRNN
     h = rnn.activation(state) if dh else None
+    stim = torch.tensor([0.7, -0.8, 0.5]) if stimulated else None
+    native_stim = None if stim is None else stim.reshape(1, 1, -1)
 
     def native_update(u, variable):
         if model_type is mRNN:
@@ -272,34 +275,48 @@ def test_shared_linearization_matches_native_jacobian(model_type, batch_first, a
                 u.reshape(1, 1, -1),
                 (state if dh else variable).unsqueeze(0),
                 h0=variable.unsqueeze(0) if dh else None,
+                stim_input=native_stim,
             )
             return (hs if dh else xs).reshape(-1)
-        return rnn(u.reshape(1, 1, -1), variable.unsqueeze(0)).reshape(-1)
+        return rnn(
+            u.reshape(1, 1, -1), variable.unsqueeze(0), stim_input=native_stim
+        ).reshape(-1)
 
     variable = h if dh else state
     expected_input, expected_state = torch.autograd.functional.jacobian(
         native_update, (inp, variable)
     )
-    jac, jac_input = lin.jacobian(inp, state, dh=dh, alpha_scaling=True)
+    jac, jac_input = lin.jacobian(inp, state, stim_input=stim, dh=dh, alpha_scaling=True)
     torch.testing.assert_close(jac, expected_state)
     torch.testing.assert_close(jac_input, expected_input)
     torch.testing.assert_close(
         lin(inp, state, torch.zeros_like(inp), torch.zeros_like(state),
-            dh=dh, alpha_scaling=True),
+            stim_input=stim, dh=dh, alpha_scaling=True),
         native_update(inp, variable),
     )
     subset = mLinearization(rnn, "r1")
     excluded, _ = subset.jacobian(
-        inp, state, dh=dh, excluded_regions=True, alpha_scaling=True
+        inp, state, stim_input=stim, dh=dh, excluded_regions=True, alpha_scaling=True
     )
     torch.testing.assert_close(excluded, expected_state[:2, 2:])
+    delta = torch.tensor([0.01, -0.02, 0.03])
+    delta_input = torch.tensor([0.02])
+    torch.testing.assert_close(
+        subset.forward(
+            inp, state, delta_input, delta[:2], delta_state_static=delta[2:],
+            stim_input=stim, dh=dh, alpha_scaling=True,
+        ),
+        (native_update(inp, variable) + expected_state @ delta
+         + expected_input @ delta_input)[:2],
+    )
+    reals, imags, vectors = lin.eigendecomposition(
+        inp, state, stim_input=stim, dh=dh, alpha_scaling=True
+    )
+    torch.testing.assert_close(
+        expected_state.to(vectors.dtype) @ vectors,
+        vectors * torch.complex(reals, imags),
+    )
     if dh:
-        normalized, normalized_input = lin.jacobian(inp, state, dh=True)
+        normalized, normalized_input = lin.jacobian(inp, state, stim_input=stim, dh=True)
         torch.testing.assert_close(normalized, expected_state / rnn.alpha)
         torch.testing.assert_close(normalized_input, expected_input / rnn.alpha)
-        reals, imags, vectors = lin.eigendecomposition(state, dh=True, alpha_scaling=True)
-        zero_input_jac, _ = lin.jacobian(torch.zeros_like(inp), state, dh=True, alpha_scaling=True)
-        torch.testing.assert_close(
-            zero_input_jac.to(vectors.dtype) @ vectors,
-            vectors * torch.complex(reals, imags),
-        )

@@ -109,7 +109,8 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
 
         states = self._broadcast_nxd(states, tile_n=1)
         static_states = (
-            states if static_states is None
+            states
+            if static_states is None
             else self._broadcast_nxd(static_states, tile_n=1)
         )
 
@@ -123,12 +124,16 @@ class mFixedPointFinder(FixedPointFinderBase[mRNN]):
         non_static_regions = [*args, *excluded_static_regions]
         static_regions = self.rnn.get_excluded_hid_regions(*non_static_regions)
         if len(static_regions) != 0 and static_state_t is not None:
-            static_region_states = self.rnn.get_region_activity(static_states, *static_regions)
+            static_region_states = self.rnn.get_region_activity(
+                static_states, *static_regions
+            )
             static_region_states = static_region_states[static_state_t].repeat(
                 n_inits, 1
             )
         elif len(static_regions) != 0 and static_state_t is None:
-            static_region_states = self.rnn.get_region_activity(static_states, *static_regions)
+            static_region_states = self.rnn.get_region_activity(
+                static_states, *static_regions
+            )
             static_region_states = self.sample_states(
                 static_region_states, n_inits=n_inits, noise_scale=noise_scale
             )

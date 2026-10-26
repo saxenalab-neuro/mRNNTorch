@@ -16,12 +16,12 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
     def __init__(
         self,
         rnn: mRNN | ElmanmRNN,
+        fit_states: torch.Tensor,
         num_points: int,
         x_offset: int,
         y_offset: int,
         x_center: int = 0,
         y_center: int = 0,
-        fit_states: torch.Tensor | None = None,
         axes: torch.Tensor | None = None,
         follow_traj: bool = False,
         region_list: list = [],
@@ -44,7 +44,7 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
                 zeroed. Each entry must belong to ``static_region_list``.
         """
         super().__init__(
-            rnn, num_points, x_offset, y_offset, x_center, y_center, fit_states, axes
+            rnn, fit_states, num_points, x_offset, y_offset, x_center, y_center, axes
         )
 
         # Unload mrnn specific kwargs
@@ -216,6 +216,7 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
         input: torch.Tensor,
         delta_input: torch.Tensor,
         delta_state_static: torch.Tensor | None = None,
+        stim_input: torch.Tensor | None = None,
     ) -> list:
         """Compute linearized 2D flow fields around sampled trajectory states.
 
@@ -228,17 +229,27 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
             delta_input (torch.Tensor): Input perturbations for the local linear model.
             delta_state_static (torch.Tensor | None): Perturbations for recurrent regions \
                 excluded from the reduced plane, in the same coordinates as states.
+            stim_input (torch.Tensor | None): Fixed stimulation at each sampled
+                state, with the same shape as the full ``states`` tensor.
 
         Returns:
             list: FlowField objects per sampled time.
         """
 
         # reshape to nxd
-        states, input, delta_input = self._nxd(states), self._nxd(input), self._nxd(delta_input)
+        states, input, delta_input = (
+            self._nxd(states),
+            self._nxd(input),
+            self._nxd(delta_input),
+        )
 
         assert input.shape[0] == delta_input.shape[0]
         assert states.shape[0] == input.shape[0]
         n_states = states.shape[0]
+
+        if stim_input is not None:
+            stim_input = self._nxd(stim_input)
+            assert stim_input.shape == states.shape
 
         # Lists for x and y velocities
         flow_field_list = []
@@ -270,6 +281,9 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
             delta_input_n = delta_input[n]
             delta_state_static_n = (
                 delta_state_static[n] if delta_state_static is not None else None
+            )
+            stim_input_n = (
+                stim_input[n] if stim_input is not None else None
             )
 
             # If follow trajectory is true get grid centered around current t
@@ -307,6 +321,7 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
                     delta_input_n,
                     delta_states,
                     delta_state_static=delta_state_static_n,
+                    stim_input=stim_input_n,
                 )
 
             # Put next h into a grid format

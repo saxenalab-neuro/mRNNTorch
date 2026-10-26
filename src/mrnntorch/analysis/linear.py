@@ -51,6 +51,7 @@ class mLinearization:
         delta_input: torch.Tensor,
         delta_state: torch.Tensor,
         *,
+        stim_input: torch.Tensor | None = None,
         delta_state_static: torch.Tensor | None = None,
         dh: bool = False,
         alpha_scaling: bool = False,
@@ -61,6 +62,7 @@ class mLinearization:
             state,
             delta_input,
             delta_state,
+            stim_input=stim_input,
             delta_state_static=delta_state_static,
             dh=dh,
             alpha_scaling=alpha_scaling,
@@ -73,6 +75,7 @@ class mLinearization:
         delta_input: torch.Tensor,
         delta_state: torch.Tensor,
         *,
+        stim_input: torch.Tensor | None = None,
         delta_state_static: torch.Tensor | None = None,
         dh: bool = False,
         alpha_scaling: bool = False,
@@ -87,6 +90,8 @@ class mLinearization:
                 region subset. Should be x perturbations or h perturbations if dh=True
             delta_state_static (torch.Tensor | None): Perturbation applied to excluded \
                 regions when only a subset of regions is linearized.
+            stim_input (torch.Tensor | None): Fixed stimulation at the operating
+                point, shaped like the full state vector ``[H]``.
             dh (bool): If ``True``, linearize the hidden activation update instead \
                 of the pre-activation update.
             alpha_scaling (bool): Passed to :meth:`jacobian`.
@@ -105,13 +110,14 @@ class mLinearization:
 
         # Get jacobians for included regions
         _jacobian, _jacobian_inp = self.jacobian(
-            input, state, dh=dh, alpha_scaling=alpha_scaling
+            input, state, stim_input=stim_input, dh=dh, alpha_scaling=alpha_scaling
         )
         if len(self.static_region_list) >= 1:
             # Get jacobians for excluded regions if available
             _jacobian_exc, _ = self.jacobian(
                 input,
                 state,
+                stim_input=stim_input,
                 excluded_regions=True,
                 dh=dh,
                 alpha_scaling=alpha_scaling,
@@ -124,6 +130,7 @@ class mLinearization:
             input.unsqueeze(0),
             state.unsqueeze(0),
             h=None if activity is None else activity.unsqueeze(0),
+            stim_input=None if stim_input is None else stim_input.unsqueeze(0),
         )
 
         out = self.rnn.get_region_activity(out, *self.region_list)
@@ -149,6 +156,7 @@ class mLinearization:
         input: torch.Tensor,
         state: torch.Tensor,
         *,
+        stim_input: torch.Tensor | None = None,
         excluded_regions: bool = False,
         dh: bool = False,
         alpha_scaling: bool = False,
@@ -160,12 +168,14 @@ class mLinearization:
             state (torch.Tensor): Leaky pre-activation or Elman hidden state at which to linearize.
             excluded_regions (bool): If ``True``, return the projection from
                 excluded recurrent regions into the included region subset.
+            stim_input (torch.Tensor | None): Fixed stimulation at the operating
+                point, shaped like the full state vector ``[H]``.
             dh (bool): If ``True``, differentiate the hidden activation output
                 rather than the pre-activation state output.
 
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: Jacobian with respect to state
-            followed by Jacobian with respect to input. For leaky dh=True,
+            followed by Jacobian with respect to input, holding stimulation fixed. For leaky dh=True,
             h is evaluated at activation(state) with x held fixed.
             alpha_scaling=True returns the actual discrete-step
             derivatives; False divides these activity derivatives by alpha.
@@ -174,6 +184,8 @@ class mLinearization:
         assert isinstance(excluded_regions, bool)
         assert state.dim() == 1
         assert input.dim() == 1
+        if stim_input is not None:
+            assert stim_input.shape == state.shape
         activity = self._initial_activity(state, dh)
 
         def update(inp, variable):
@@ -182,6 +194,7 @@ class mLinearization:
                 inp.unsqueeze(0),
                 (state if activity is not None else variable).unsqueeze(0),
                 h=variable.unsqueeze(0) if activity is not None else None,
+                stim_input=None if stim_input is None else stim_input.unsqueeze(0),
             )
             return next_state.squeeze(0)
 
@@ -229,6 +242,7 @@ class mLinearization:
         input: torch.Tensor,
         state: torch.Tensor,
         *,
+        stim_input: torch.Tensor | None = None,
         dh: bool = False,
         alpha_scaling: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -236,6 +250,8 @@ class mLinearization:
 
         Args:
             state (torch.Tensor): Leaky pre-activation or Elman hidden state at which to linearize.
+            stim_input (torch.Tensor | None): Fixed stimulation at the operating
+                point, shaped like the full state vector ``[H]``.
             dh (bool): If ``True``, eigendecompose the hidden-state Jacobian.
 
         Returns:
@@ -243,7 +259,9 @@ class mLinearization:
             torch.Tensor: Imag parts of eigenvalues.
             torch.Tensor: Eigenvectors stacked column-wise.
         """
-        _jacobian, _ = self.jacobian(input, state, dh=dh, alpha_scaling=alpha_scaling)
+        _jacobian, _ = self.jacobian(
+            input, state, stim_input=stim_input, dh=dh, alpha_scaling=alpha_scaling
+        )
         eigenvalues, eigenvectors = torch.linalg.eig(_jacobian)
 
         return eigenvalues.real, eigenvalues.imag, eigenvectors
