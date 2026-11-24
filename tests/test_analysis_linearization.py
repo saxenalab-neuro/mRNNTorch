@@ -254,7 +254,8 @@ def test_jacobian_requires_1d_x_e():
 @pytest.mark.parametrize("batch_first", [True, False])
 @pytest.mark.parametrize("activity_mode", [True, False])
 @pytest.mark.parametrize("stimulated", [True, False])
-def test_shared_linearization_matches_native_jacobian(model_type, batch_first, activity_mode, stimulated):
+@pytest.mark.parametrize("x_is_h", [True, False])
+def test_shared_linearization_matches_native_jacobian(model_type, batch_first, activity_mode, stimulated, x_is_h):
     builder = (
         _build_leaky_mrnn_with_inputs if model_type is mRNN
         else _build_elman_mrnn_with_inputs
@@ -265,6 +266,7 @@ def test_shared_linearization_matches_native_jacobian(model_type, batch_first, a
     state = torch.tensor([0.4, -0.2, 0.1])
     inp = torch.tensor([0.3])
     dh = activity_mode and model_type is mRNN
+    x_is_h = x_is_h and dh
     h = rnn.activation(state) if dh else None
     stim = torch.tensor([0.7, -0.8, 0.5]) if stimulated else None
     native_stim = None if stim is None else stim.reshape(1, 1, -1)
@@ -283,6 +285,7 @@ def test_shared_linearization_matches_native_jacobian(model_type, batch_first, a
         ).reshape(-1)
 
     variable = h if dh else state
+    forward_variable = state if x_is_h else variable
     expected_input, expected_state = torch.autograd.functional.jacobian(
         native_update, (inp, variable)
     )
@@ -291,8 +294,8 @@ def test_shared_linearization_matches_native_jacobian(model_type, batch_first, a
     torch.testing.assert_close(jac_input, expected_input)
     torch.testing.assert_close(
         lin(inp, state, torch.zeros_like(inp), torch.zeros_like(state),
-            stim_input=stim, dh=dh, alpha_scaling=True),
-        native_update(inp, variable),
+            stim_input=stim, dh=dh, x_is_h=x_is_h, alpha_scaling=True),
+        native_update(inp, forward_variable),
     )
     subset = mLinearization(rnn, "r1")
     excluded, _ = subset.jacobian(
@@ -304,9 +307,9 @@ def test_shared_linearization_matches_native_jacobian(model_type, batch_first, a
     torch.testing.assert_close(
         subset.forward(
             inp, state, delta_input, delta[:2], delta_state_static=delta[2:],
-            stim_input=stim, dh=dh, alpha_scaling=True,
+            stim_input=stim, dh=dh, x_is_h=x_is_h, alpha_scaling=True,
         ),
-        (native_update(inp, variable) + expected_state @ delta
+        (native_update(inp, forward_variable) + expected_state @ delta
          + expected_input @ delta_input)[:2],
     )
     reals, imags, vectors = lin.eigendecomposition(

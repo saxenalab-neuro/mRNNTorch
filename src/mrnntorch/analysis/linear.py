@@ -54,6 +54,7 @@ class mLinearization:
         stim_input: torch.Tensor | None = None,
         delta_state_static: torch.Tensor | None = None,
         dh: bool = False,
+        x_is_h: bool = False,
         alpha_scaling: bool = False,
     ) -> torch.Tensor:
         """Alias for :meth:`forward`."""
@@ -65,6 +66,7 @@ class mLinearization:
             stim_input=stim_input,
             delta_state_static=delta_state_static,
             dh=dh,
+            x_is_h=x_is_h,
             alpha_scaling=alpha_scaling,
         )
 
@@ -78,6 +80,7 @@ class mLinearization:
         stim_input: torch.Tensor | None = None,
         delta_state_static: torch.Tensor | None = None,
         dh: bool = False,
+        x_is_h: bool = False,
         alpha_scaling: bool = False,
     ) -> torch.Tensor:
         """Evaluate the linear approximation in the requested state coordinates.
@@ -92,6 +95,9 @@ class mLinearization:
                 regions when only a subset of regions is linearized.
             stim_input (torch.Tensor | None): Fixed stimulation at the operating
                 point, shaped like the full state vector ``[H]``.
+            x_is_h (bool): Use the supplied state as both x and initial h without
+                activating it for the base forward step. Does not affect Jacobians,
+                which are controlled by dh. Ignored for Elman models.
             dh (bool): If ``True``, linearize the hidden activation update instead \
                 of the pre-activation update.
             alpha_scaling (bool): Passed to :meth:`jacobian`.
@@ -110,7 +116,8 @@ class mLinearization:
 
         # Get jacobians for included regions
         _jacobian, _jacobian_inp = self.jacobian(
-            input, state, stim_input=stim_input, dh=dh, alpha_scaling=alpha_scaling
+            input, state, stim_input=stim_input, dh=dh,
+            alpha_scaling=alpha_scaling
         )
         if len(self.static_region_list) >= 1:
             # Get jacobians for excluded regions if available
@@ -125,7 +132,10 @@ class mLinearization:
         else:
             _jacobian_exc = None
 
-        activity = self._initial_activity(state, dh)
+        activity = (
+            state if x_is_h and self.adapter.is_leaky
+            else self._initial_activity(state, dh)
+        )
         out = self.adapter.step(
             input.unsqueeze(0),
             state.unsqueeze(0),
@@ -260,7 +270,8 @@ class mLinearization:
             torch.Tensor: Eigenvectors stacked column-wise.
         """
         _jacobian, _ = self.jacobian(
-            input, state, stim_input=stim_input, dh=dh, alpha_scaling=alpha_scaling
+            input, state, stim_input=stim_input, dh=dh,
+            alpha_scaling=alpha_scaling
         )
         eigenvalues, eigenvectors = torch.linalg.eig(_jacobian)
 

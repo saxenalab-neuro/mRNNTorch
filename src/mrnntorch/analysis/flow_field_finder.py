@@ -217,11 +217,13 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
         delta_input: torch.Tensor,
         delta_state_static: torch.Tensor | None = None,
         stim_input: torch.Tensor | None = None,
+        x_is_h: bool = False,
     ) -> list:
         """Compute linearized 2D flow fields around sampled trajectory states.
 
         Uses a local linear approximation of the dynamics around each supplied
-        state and input. Coordinates are leaky x or Elman h.
+        state and input. Coordinates are leaky x or Elman h, or activity
+        coordinates under the leaky x=h approximation when x_is_h=True.
 
         Args:
             states (torch.Tensor): Network states over time.
@@ -231,10 +233,18 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
                 excluded from the reduced plane, in the same coordinates as states.
             stim_input (torch.Tensor | None): Fixed stimulation at each sampled
                 state, with the same shape as the full ``states`` tensor.
+            x_is_h (bool): Treat supplied states as both x and h for leaky models
+                in the base forward step and return activity flow. The activity
+                Jacobian still uses h=activation(state), holding x fixed.
+                Ignored for Elman models.
 
         Returns:
             list: FlowField objects per sampled time.
         """
+
+        if x_is_h and not self.adapter.is_leaky:
+            warnings.warn("x_is_h is True but rnn is not leaky, parameter is ignored")
+        activity_mode = x_is_h and self.adapter.is_leaky
 
         # reshape to nxd
         states, input, delta_input = (
@@ -307,10 +317,7 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
 
             # Get a perturbation of the activity
             region_states_n = self.rnn.get_region_activity(states_n, *self.region_list)
-            """
-                This assumes delta state is always of x 
-                This should be ok since it is a general perturbation still
-            """
+            # Grid and perturbations use the supplied state coordinates.
             delta_states = inverse_grid - region_states_n
 
             with torch.no_grad():
@@ -322,6 +329,9 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
                     delta_states,
                     delta_state_static=delta_state_static_n,
                     stim_input=stim_input_n,
+                    dh=activity_mode,
+                    x_is_h=activity_mode,
+                    alpha_scaling=True,
                 )
 
             # Put next h into a grid format

@@ -354,3 +354,37 @@ def test_find_nonlinear_flow_e():
     trajectory = _sample_trajectory(batch=1, seq=2, units=3)
     inp = torch.zeros(1, 2, 1)
     finder.find_nonlinear_flow(trajectory, inp)
+
+
+@pytest.mark.parametrize("batch_first", [True, False])
+def test_linear_activity_flow_uses_supplied_h(monkeypatch, batch_first):
+    """Activity grids use h directly and discrete-step derivatives with x fixed."""
+    rnn = _build_leaky_mrnn_with_inputs()
+    rnn.activation = torch.nn.Tanh()
+    rnn.batch_first = batch_first
+    finder = mFlowFieldFinder(
+        rnn, fit_states=_axes_fit_states(), num_points=2, x_offset=1, y_offset=1,
+    )
+    state = torch.tensor([0.8, -0.6, 0.3])
+    inp = torch.tensor([0.2])
+    stim = torch.tensor([0.4, -0.2, 0.1])
+    delta = torch.tensor([[0.01, 0.02, 0.0], [-0.01, 0.02, 0.0],
+                          [0.01, -0.02, 0.0], [-0.01, -0.02, 0.0]])
+    grid = state + delta
+    monkeypatch.setattr(finder, "_inverse_grid", lambda *args: (grid[:, :2], grid))
+    monkeypatch.setattr(finder, "_reduce_traj", lambda values: values[..., :2])
+
+    def native_activity(h):
+        _, hs = rnn(inp.reshape(1, 1, -1), state.unsqueeze(0),
+                    h0=h.unsqueeze(0), stim_input=stim.reshape(1, 1, -1))
+        return hs.reshape(-1)
+
+    jac = torch.autograd.functional.jacobian(native_activity, rnn.activation(state))
+    expected_next = native_activity(state) + delta @ jac.T
+    expected_velocity = (expected_next[:, :2] - grid[:, :2]).reshape(2, 2, 2)
+    field = finder.find_linear_flow(
+        state.reshape(1, 1, -1), inp.reshape(1, 1, -1),
+        torch.zeros(1, 1, 1), stim_input=stim.reshape(1, 1, -1), x_is_h=True,
+    )[0]
+    torch.testing.assert_close(field.x_vels, expected_velocity[..., 0])
+    torch.testing.assert_close(field.y_vels, expected_velocity[..., 1])
