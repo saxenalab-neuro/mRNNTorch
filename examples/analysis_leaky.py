@@ -318,12 +318,12 @@ def analyze_nonlinear_flow(model, state_traj, fp_states):
 def analyze_stability(model, state_traj, fp_states, region=None, label=None, external_input=None, trajectory_end_t=None):
     """Classify discrete-time stability and retain unstable eigenvectors."""
     regions = () if region is None else (region,)
-    linearization = mLinearization(model.rnn, *regions)
     stability = []
     eigenvectors = []
     for state in fp_states:
         inp = state.new_zeros(n_bits) if external_input is None else external_input
-        jacobian, _ = linearization.jacobian(inp, state)
+        linearization = mLinearization(model.rnn, inp, state, *regions)
+        jacobian = linearization.jacobian
         eigenvalues, eigvec = torch.linalg.eig(jacobian)
         magnitude = eigenvalues.abs()
         stability.append(bool(torch.all(magnitude < 1)))

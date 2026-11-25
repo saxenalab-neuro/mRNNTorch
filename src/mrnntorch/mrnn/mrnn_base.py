@@ -18,6 +18,7 @@ from mrnntorch.region.region_base import (
     DEFAULT_CONNECTIONS,
 )
 from mrnntorch.mrnn.config_check import mRNNConfig
+import warnings
 
 
 def linear(x: torch.Tensor) -> torch.Tensor:
@@ -137,12 +138,20 @@ class mRNNBase(nn.Module):
             self.activation = nn.ReLU()
         elif activation == "tanh":
             self.activation = nn.Tanh()
+            if rec_constrained:
+                warnings.warn("The use of Tanh in a constrained network will \
+                    result in activations that disobey Dales law, since units range between \
+                        (-1, 1). Please use a strictly positive activation instead.")
         elif activation == "sigmoid":
             self.activation = nn.Sigmoid()
         elif activation == "softplus":
             self.activation = nn.Softplus(beta=softplus_beta)
         elif activation == "linear":
             self.activation = linear
+            if rec_constrained:
+                warnings.warn("The use of linear activation in a constrained network will \
+                    result in activations that disobey Dales law. Please use a strictly \
+                        positive activation instead.")
         else:
             raise Exception(
                 "Only relu, tanh, sigmoid, or linear activations are implemented"

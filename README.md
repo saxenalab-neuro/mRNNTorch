@@ -25,6 +25,9 @@ python -m pip install -e .
 ```
 
 ## Quick start
+
+### Building mRNN
+
 There are two ways to define an mRNN:
 1. Pass a JSON config file for regions and connections.
 2. Build regions and connections manually inside your model.
@@ -51,6 +54,69 @@ class MyMRNN(nn.Module):
 
     def forward(self, inp, x, h):
         return self.mrnn(inp, x, h)
+```
+
+### Analysis
+
+Given a `MyMRNN` instance named `model` (for example, after training), generate a trajectory for analysis. These examples run on CPU with batch-first sequences and use the leaky network's pre-activation states `x`.
+
+```python
+import torch
+from mrnntorch.analysis import mFixedPointFinder, mFlowFieldFinder, mLinearization
+
+rnn = model.mrnn.cpu().eval()
+rnn.batch_first = True
+inputs = torch.randn(1, 100, rnn.W_inp.shape[1])
+x0, h0 = rnn.batched_initial_condition(batch_size=1)
+with torch.no_grad():
+    states, activities = rnn(inputs, x0, h0, noise=False)
+```
+
+**Fixed points.** Sample initial guesses from the trajectory and search at a constant input. Check `xstar` to access the fixed points, and `F_xstar` to access the next state from said fixed point. Use `F_xstar` for leaky mRNNs when attempting to access network activations `h` instead of pre-activations `x`.
+
+```python
+fixed_input = torch.zeros(rnn.W_inp.shape[1])
+fp_finder = mFixedPointFinder(rnn, lr_init=1e-2, max_iters=1000, verbose=False)
+initial_states = fp_finder.sample_states(states, n_inits=32, noise_scale=0.01)
+fixed_points, all_candidates = fp_finder.find_fixed_points(initial_states, fixed_input)
+print(fixed_points.xstar)
+print(fixed_points.F_xstar)
+```
+
+**Linearization.** Build a local linear model at each fixed point found above, using the same constant input. The Jacobian describes the discrete-time state update.
+
+```python
+linearizations = [
+    mLinearization(rnn, fixed_input, state)
+    for state in fixed_points.xstar
+]
+for lin in linearizations:
+    eigenvalues = torch.complex(lin.jac_rec_real_eigs, lin.jac_rec_im_eigs)
+    print("Spectral radius:", eigenvalues.abs().max().item())
+    # lin.jacobian and lin.jacobian_inp contain state and input derivatives.
+```
+
+**Flow fields.** Fit a two-dimensional PCA plane to the trajectory, then compute a nonlinear flow field at the same constant input.
+
+```python
+flow_finder = mFlowFieldFinder(
+    rnn,
+    fit_states=states,
+    num_points=20,
+    x_offset=2,
+    y_offset=2,
+)
+field = flow_finder.find_nonlinear_flow(states[:, -1:], fixed_input[None, None, :])[0]
+
+import matplotlib.pyplot as plt
+
+plt.quiver(
+    field.grid[..., 0], field.grid[..., 1],
+    field.x_vels, field.y_vels,
+)
+plt.xlabel("PC 1")
+plt.ylabel("PC 2")
+plt.show()
 ```
 
 ## Configuration files

@@ -27,4 +27,5 @@ htmlcov/
 # Logs
 *.log
 results/
+AGENTS.md
 

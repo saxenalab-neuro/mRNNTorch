@@ -18,24 +18,16 @@ from mrnntorch import mRNN, ElmanmRNN
 def _build_leaky_mrnn() -> mRNN:
     """Construct a minimal mRNN with two recurrent regions on CPU."""
     mrnn = mRNN(device="cpu", rec_constrained=False, inp_constrained=False)
-    mrnn.add_recurrent_region(
-        name="r1", num_units=2, sign="pos", base_firing=0, init=0
-    )
-    mrnn.add_recurrent_region(
-        name="r2", num_units=1, sign="pos", base_firing=0, init=0
-    )
+    mrnn.add_recurrent_region(name="r1", num_units=2, sign="pos", base_firing=0, init=0)
+    mrnn.add_recurrent_region(name="r2", num_units=1, sign="pos", base_firing=0, init=0)
     return mrnn
 
 
 def _build_elman_mrnn() -> ElmanmRNN:
     """Construct a minimal mRNN with two recurrent regions on CPU."""
     mrnn = ElmanmRNN(device="cpu", rec_constrained=False, inp_constrained=False)
-    mrnn.add_recurrent_region(
-        name="r1", num_units=2, sign="pos", base_firing=0, init=0
-    )
-    mrnn.add_recurrent_region(
-        name="r2", num_units=1, sign="pos", base_firing=0, init=0
-    )
+    mrnn.add_recurrent_region(name="r1", num_units=2, sign="pos", base_firing=0, init=0)
+    mrnn.add_recurrent_region(name="r2", num_units=1, sign="pos", base_firing=0, init=0)
     return mrnn
 
 
@@ -82,7 +74,7 @@ def _zero_network_dynamics(mrnn: mRNN | ElmanmRNN) -> None:
 
 
 def _axes_fit_states() -> torch.Tensor:
-    """Non-degenerate fit states that should be ignored when axes are provided."""
+    """Non-degenerate fit states with a nonzero mean for centering explicit axes."""
     return torch.tensor(
         [
             [0.0, 0.0, 0.0],
@@ -112,16 +104,18 @@ def _swapped_xy_axes() -> torch.Tensor:
 def test_find_flow_uses_provided_axes_for_all_transformations(
     finder_cls, build_mrnn, flow_kind, velocity_scale
 ):
-    """Provided axes should define the flow plane for nonlinear and linear flows."""
+    """Provided axes define a flow plane centered on the mean of fit_states."""
     mrnn = build_mrnn()
     _zero_network_dynamics(mrnn)
+    fit_states = _axes_fit_states()
+    axes = _swapped_xy_axes()
     finder = finder_cls(
         mrnn,
         num_points=3,
         x_offset=1,
         y_offset=2,
-        fit_states=_axes_fit_states(),
-        axes=_swapped_xy_axes(),
+        fit_states=fit_states,
+        axes=axes,
     )
     trajectory = torch.tensor([[[1.0, 2.0, 3.0]]])
     inp = torch.zeros(1, 1, 1)
@@ -140,8 +134,13 @@ def test_find_flow_uses_provided_axes_for_all_transformations(
         ]
     )
     assert torch.allclose(flow_field.grid, expected_grid)
-    assert torch.allclose(flow_field.x_vels, velocity_scale * expected_grid[..., 0])
-    assert torch.allclose(flow_field.y_vels, velocity_scale * expected_grid[..., 1])
+    # Inverse projection adds the fit mean. These zero-weight dynamics decay
+    # toward the state-space origin, whose centered coordinates are -mean @ axes.T.
+    # Thus the projected displacement is scale * (grid + mean @ axes.T).
+    projected_mean = fit_states.mean(dim=0) @ axes.T
+    expected_velocity = velocity_scale * (expected_grid + projected_mean)
+    assert torch.allclose(flow_field.x_vels, expected_velocity[..., 0])
+    assert torch.allclose(flow_field.y_vels, expected_velocity[..., 1])
 
 
 # --------------- Test leaky flow field finder --------------------------
@@ -166,7 +165,6 @@ def test_flow_field_finder_init_sets_defaults_l():
     assert finder.excluded_static_regions == []
     assert finder.follow_traj is True
     assert isinstance(finder.reduce_obj, PCA)
-    assert finder.linearization.rnn is mrnn
 
 
 def test_reduce_traj_no_args_shape_l():
@@ -272,7 +270,6 @@ def test_flow_field_finder_init_sets_defaults_e():
     assert finder.excluded_static_regions == []
     assert finder.follow_traj is True
     assert isinstance(finder.reduce_obj, PCA)
-    assert finder.linearization.rnn is mrnn
 
 
 def test_reduce_traj_no_args_shape_e():
@@ -363,28 +360,40 @@ def test_linear_activity_flow_uses_supplied_h(monkeypatch, batch_first):
     rnn.activation = torch.nn.Tanh()
     rnn.batch_first = batch_first
     finder = mFlowFieldFinder(
-        rnn, fit_states=_axes_fit_states(), num_points=2, x_offset=1, y_offset=1,
+        rnn,
+        fit_states=_axes_fit_states(),
+        num_points=2,
+        x_offset=1,
+        y_offset=1,
     )
     state = torch.tensor([0.8, -0.6, 0.3])
     inp = torch.tensor([0.2])
     stim = torch.tensor([0.4, -0.2, 0.1])
-    delta = torch.tensor([[0.01, 0.02, 0.0], [-0.01, 0.02, 0.0],
-                          [0.01, -0.02, 0.0], [-0.01, -0.02, 0.0]])
+    delta = torch.tensor(
+        [[0.01, 0.02, 0.0], [-0.01, 0.02, 0.0], [0.01, -0.02, 0.0], [-0.01, -0.02, 0.0]]
+    )
     grid = state + delta
     monkeypatch.setattr(finder, "_inverse_grid", lambda *args: (grid[:, :2], grid))
     monkeypatch.setattr(finder, "_reduce_traj", lambda values: values[..., :2])
 
     def native_activity(h):
-        _, hs = rnn(inp.reshape(1, 1, -1), state.unsqueeze(0),
-                    h0=h.unsqueeze(0), stim_input=stim.reshape(1, 1, -1))
+        _, hs = rnn(
+            inp.reshape(1, 1, -1),
+            state.unsqueeze(0),
+            h0=h.unsqueeze(0),
+            stim_input=stim.reshape(1, 1, -1),
+        )
         return hs.reshape(-1)
 
     jac = torch.autograd.functional.jacobian(native_activity, rnn.activation(state))
     expected_next = native_activity(state) + delta @ jac.T
     expected_velocity = (expected_next[:, :2] - grid[:, :2]).reshape(2, 2, 2)
     field = finder.find_linear_flow(
-        state.reshape(1, 1, -1), inp.reshape(1, 1, -1),
-        torch.zeros(1, 1, 1), stim_input=stim.reshape(1, 1, -1), x_is_h=True,
+        state.reshape(1, 1, -1),
+        inp.reshape(1, 1, -1),
+        torch.zeros(1, 1, 1),
+        stim_input=stim.reshape(1, 1, -1),
+        x_is_h=True,
     )[0]
     torch.testing.assert_close(field.x_vels, expected_velocity[..., 0])
     torch.testing.assert_close(field.y_vels, expected_velocity[..., 1])
