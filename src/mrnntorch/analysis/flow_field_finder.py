@@ -72,7 +72,6 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
             else self.rnn.get_excluded_hid_regions(*self.region_list)
         )
         assert set(self.excluded_static_regions) <= set(self.static_region_list)
-        self.linearization = mLinearization(rnn, *self.region_list)
 
     def find_nonlinear_flow(
         self,
@@ -292,8 +291,15 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
             delta_state_static_n = (
                 delta_state_static[n] if delta_state_static is not None else None
             )
-            stim_input_n = (
-                stim_input[n] if stim_input is not None else None
+            stim_input_n = stim_input[n] if stim_input is not None else None
+            linearization = mLinearization(
+                self.rnn,
+                input_n,
+                states_n,
+                *self.region_list,
+                stim_input=stim_input_n,
+                dh=activity_mode,
+                alpha_scaling=True
             )
 
             # If follow trajectory is true get grid centered around current t
@@ -322,16 +328,11 @@ class mFlowFieldFinder(FlowFieldFinderBase[mRNN]):
 
             with torch.no_grad():
                 # get next state of h or of x if dh is false
-                state_next = self.linearization(
-                    input_n,
-                    states_n,
+                state_next = linearization(
                     delta_input_n,
                     delta_states,
                     delta_state_static=delta_state_static_n,
-                    stim_input=stim_input_n,
-                    dh=activity_mode,
                     x_is_h=activity_mode,
-                    alpha_scaling=True,
                 )
 
             # Put next h into a grid format

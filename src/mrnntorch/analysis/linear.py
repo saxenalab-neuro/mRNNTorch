@@ -14,7 +14,12 @@ class mLinearization:
     def __init__(
         self,
         rnn: mRNN | ElmanmRNN,
+        input: torch.Tensor,
+        state: torch.Tensor,
         *args,
+        stim_input: torch.Tensor | None = None,
+        dh: bool = False,
+        alpha_scaling: bool = False,
     ):
         """Initialize the linearization helper for a model and region subset.
 
@@ -23,8 +28,21 @@ class mLinearization:
             *args (str): Optional recurrent region names to include in the
                 linearized subspace. If omitted, all recurrent regions are used.
         """
+
+        assert state.dim() == 1
+        assert input.dim() == 1
+
+        if stim_input is not None:
+            assert stim_input.shape == state.shape
+
         self.rnn = rnn
         self.adapter = mRNNAdapter(rnn)
+        self.input = input
+        self.state = state
+        self.stim_input = stim_input
+        self.dh = dh
+        self.alpha_scaling = alpha_scaling
+
         # Regions which are treated as grid elements
         self.zero_states = torch.zeros(
             size=(
@@ -44,44 +62,42 @@ class mLinearization:
             else self.rnn.get_excluded_hid_regions(*self.region_list)
         )
 
+        # Get jacobians for included regions
+        self.jacobian, self.jacobian_inp = self._jacobian()
+        if len(self.static_region_list) >= 1:
+            # Get jacobians for excluded regions if available
+            self.jacobian_exc, _ = self._jacobian(
+                excluded_regions=True,
+            )
+        else:
+            self.jacobian_exc = None
+        self.jac_rec_real_eigs, self.jac_rec_im_eigs, self.jac_rec_eigvecs = (
+            self._eigendecomposition()
+        )
+
     def __call__(
         self,
-        input: torch.Tensor,
-        state: torch.Tensor,
         delta_input: torch.Tensor,
         delta_state: torch.Tensor,
         *,
-        stim_input: torch.Tensor | None = None,
         delta_state_static: torch.Tensor | None = None,
-        dh: bool = False,
         x_is_h: bool = False,
-        alpha_scaling: bool = False,
     ) -> torch.Tensor:
         """Alias for :meth:`forward`."""
         return self.forward(
-            input,
-            state,
             delta_input,
             delta_state,
-            stim_input=stim_input,
             delta_state_static=delta_state_static,
-            dh=dh,
             x_is_h=x_is_h,
-            alpha_scaling=alpha_scaling,
         )
 
     def forward(
         self,
-        input: torch.Tensor,
-        state: torch.Tensor,
         delta_input: torch.Tensor,
         delta_state: torch.Tensor,
         *,
-        stim_input: torch.Tensor | None = None,
         delta_state_static: torch.Tensor | None = None,
-        dh: bool = False,
         x_is_h: bool = False,
-        alpha_scaling: bool = False,
     ) -> torch.Tensor:
         """Evaluate the linear approximation in the requested state coordinates.
 
@@ -106,70 +122,45 @@ class mLinearization:
             torch.Tensor: Linearized next state in the requested coordinates.
         """
 
-        # Assert correct shapes
-        assert input.dim() == 1
-        assert state.dim() == 1
-
         # Flatten delta since it can be batched
         if delta_state.dim() > 1:
             delta_state = delta_state.flatten(start_dim=0, end_dim=-2)
 
-        # Get jacobians for included regions
-        _jacobian, _jacobian_inp = self.jacobian(
-            input, state, stim_input=stim_input, dh=dh,
-            alpha_scaling=alpha_scaling
-        )
-        if len(self.static_region_list) >= 1:
-            # Get jacobians for excluded regions if available
-            _jacobian_exc, _ = self.jacobian(
-                input,
-                state,
-                stim_input=stim_input,
-                excluded_regions=True,
-                dh=dh,
-                alpha_scaling=alpha_scaling,
-            )
-        else:
-            _jacobian_exc = None
-
         activity = (
-            state if x_is_h and self.adapter.is_leaky
-            else self._initial_activity(state, dh)
+            self.state
+            if x_is_h and self.adapter.is_leaky
+            else self._initial_activity(self.state, self.dh)
         )
         out = self.adapter.step(
-            input.unsqueeze(0),
-            state.unsqueeze(0),
+            self.input.unsqueeze(0),
+            self.state.unsqueeze(0),
             h=None if activity is None else activity.unsqueeze(0),
-            stim_input=None if stim_input is None else stim_input.unsqueeze(0),
+            stim_input=(
+                None if self.stim_input is None else self.stim_input.unsqueeze(0)
+            ),
         )
 
         out = self.rnn.get_region_activity(out, *self.region_list)
 
-        if _jacobian_exc is None or delta_state_static is None:
+        if self.jacobian_exc is None or delta_state_static is None:
             pert = (
                 out.squeeze(0)
-                + delta_state @ _jacobian.T
-                + (_jacobian_inp @ delta_input)
+                + delta_state @ self.jacobian.T
+                + (self.jacobian_inp @ delta_input)
             )
         else:
             pert = (
                 out.squeeze(0)
-                + delta_state @ _jacobian.T
-                + (delta_state_static @ _jacobian_exc.T)
-                + (_jacobian_inp @ delta_input)
+                + delta_state @ self.jacobian.T
+                + (delta_state_static @ self.jacobian_exc.T)
+                + (self.jacobian_inp @ delta_input)
             )
 
         return pert
 
-    def jacobian(
+    def _jacobian(
         self,
-        input: torch.Tensor,
-        state: torch.Tensor,
-        *,
-        stim_input: torch.Tensor | None = None,
         excluded_regions: bool = False,
-        dh: bool = False,
-        alpha_scaling: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Return Jacobians of the update with respect to state and input.
 
@@ -192,28 +183,26 @@ class mLinearization:
         """
 
         assert isinstance(excluded_regions, bool)
-        assert state.dim() == 1
-        assert input.dim() == 1
-        if stim_input is not None:
-            assert stim_input.shape == state.shape
-        activity = self._initial_activity(state, dh)
+        activity = self._initial_activity(self.state, self.dh)
 
         def update(inp, variable):
             # Differentiate h independently, holding x fixed, in activity mode.
             next_state = self.adapter.step(
                 inp.unsqueeze(0),
-                (state if activity is not None else variable).unsqueeze(0),
+                (self.state if activity is not None else variable).unsqueeze(0),
                 h=variable.unsqueeze(0) if activity is not None else None,
-                stim_input=None if stim_input is None else stim_input.unsqueeze(0),
+                stim_input=(
+                    None if self.stim_input is None else self.stim_input.unsqueeze(0)
+                ),
             )
             return next_state.squeeze(0)
 
         _jacobian_input, _jacobian = torch.autograd.functional.jacobian(
-            update, (input, state if activity is None else activity)
+            update, (self.input, self.state if activity is None else activity)
         )
 
         # Preserve the existing optional normalization for leaky activity.
-        if activity is not None and not alpha_scaling:
+        if activity is not None and not self.alpha_scaling:
             _jacobian = _jacobian / self.rnn.alpha
             _jacobian_input = _jacobian_input / self.rnn.alpha
 
@@ -247,14 +236,8 @@ class mLinearization:
 
         return _jacobian, _jacobian_input
 
-    def eigendecomposition(
+    def _eigendecomposition(
         self,
-        input: torch.Tensor,
-        state: torch.Tensor,
-        *,
-        stim_input: torch.Tensor | None = None,
-        dh: bool = False,
-        alpha_scaling: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute the eigendecomposition of the local Jacobian.
 
@@ -269,11 +252,7 @@ class mLinearization:
             torch.Tensor: Imag parts of eigenvalues.
             torch.Tensor: Eigenvectors stacked column-wise.
         """
-        _jacobian, _ = self.jacobian(
-            input, state, stim_input=stim_input, dh=dh,
-            alpha_scaling=alpha_scaling
-        )
-        eigenvalues, eigenvectors = torch.linalg.eig(_jacobian)
+        eigenvalues, eigenvectors = torch.linalg.eig(self.jacobian)
 
         return eigenvalues.real, eigenvalues.imag, eigenvectors
 

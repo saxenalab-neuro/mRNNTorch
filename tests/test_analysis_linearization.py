@@ -71,10 +71,10 @@ def _build_elman_mrnn_with_inputs(activation="relu") -> ElmanmRNN:
 def test_jacobian_matches_weight_x_l():
     """Linear activation yields the unscaled leaky update Jacobian by default."""
     mrnn = _build_leaky_mrnn_with_inputs(activation="relu")
-    lin = mLinearization(mrnn)
     x = torch.ones(3)
     inp = torch.zeros(1)
-    jac, jac_inp = lin.jacobian(inp, x)
+    lin = mLinearization(mrnn, inp, x)
+    jac, jac_inp = lin.jacobian, lin.jacobian_inp
     assert torch.allclose(
         jac, (1 - mrnn.alpha) * torch.eye(3) + mrnn.alpha * mrnn.W_rec
     )
@@ -84,10 +84,10 @@ def test_jacobian_matches_weight_x_l():
 def test_jacobian_matches_weight_x_r1_l():
     """Linear activation yields the unscaled leaky update Jacobian by default."""
     mrnn = _build_leaky_mrnn_with_inputs(activation="relu")
-    lin = mLinearization(mrnn, "r1")
     x = torch.ones(3)
     inp = torch.zeros(1)
-    jac, jac_inp = lin.jacobian(inp, x)
+    lin = mLinearization(mrnn, inp, x, "r1")
+    jac, jac_inp = lin.jacobian, lin.jacobian_inp
     assert torch.allclose(
         jac,
         mrnn.get_weight_subset(
@@ -100,10 +100,10 @@ def test_jacobian_matches_weight_x_r1_l():
 def test_jacobian_matches_weight_x_r2_l():
     """Linear activation yields the unscaled leaky update Jacobian by default."""
     mrnn = _build_leaky_mrnn_with_inputs(activation="relu")
-    lin = mLinearization(mrnn, "r2")
     x = torch.ones(3)
     inp = torch.zeros(1)
-    jac, jac_inp = lin.jacobian(inp, x)
+    lin = mLinearization(mrnn, inp, x, "r2")
+    jac, jac_inp = lin.jacobian, lin.jacobian_inp
     assert torch.allclose(
         jac,
         mrnn.get_weight_subset(
@@ -116,14 +116,14 @@ def test_jacobian_matches_weight_x_r2_l():
 def test_jacobian_matches_weight_h_l():
     """Linear activation yields the unscaled leaky update Jacobian by default."""
     mrnn = _build_leaky_mrnn_with_inputs(activation="relu")
-    lin = mLinearization(mrnn)
     x = torch.tensor([1.0, 1.0, -1.0])
     h = torch.tensor([1.0, 1.0, 0.0])
     inp = torch.zeros(1)
     x_next, _ = mrnn(inp.unsqueeze(0).unsqueeze(0), x.unsqueeze(0))
     x_next = x_next.squeeze()
     dx = torch.where(x_next > 0, 1.0, 0.0)
-    jac, jac_inp = lin.jacobian(inp, x, dh=True)
+    lin = mLinearization(mrnn, inp, x, dh=True)
+    jac, jac_inp = lin.jacobian, lin.jacobian_inp
     assert torch.allclose(jac, torch.diag(dx) @ (mrnn.W_rec))
     assert torch.allclose(jac_inp, torch.diag(dx) @ (mrnn.W_inp))
 
@@ -131,14 +131,14 @@ def test_jacobian_matches_weight_h_l():
 def test_jacobian_matches_weight_h_r1_l():
     """Linear activation yields the unscaled leaky update Jacobian by default."""
     mrnn = _build_leaky_mrnn_with_inputs(activation="relu")
-    lin = mLinearization(mrnn, "r1")
     x = torch.tensor([1.0, 1.0, -1.0])
     h = torch.tensor([1.0, 1.0, 0.0])
     inp = torch.zeros(1)
     x_next, _ = mrnn(inp.unsqueeze(0).unsqueeze(0), x.unsqueeze(0))
     x_next = x_next.squeeze()
     dx = torch.where(x_next > 0, 1.0, 0.0)
-    jac, jac_inp = lin.jacobian(inp, x, dh=True)
+    lin = mLinearization(mrnn, inp, x, "r1", dh=True)
+    jac, jac_inp = lin.jacobian, lin.jacobian_inp
     assert torch.allclose(
         jac,
         mrnn.get_weight_subset("r1", W=torch.diag(dx) @ (mrnn.W_rec)),
@@ -149,14 +149,14 @@ def test_jacobian_matches_weight_h_r1_l():
 def test_jacobian_matches_weight_h_r2_l():
     """alpha_scaling=True scales out the leaky update alpha."""
     mrnn = _build_leaky_mrnn_with_inputs(activation="relu")
-    lin = mLinearization(mrnn, "r2")
     x = torch.tensor([1.0, 1.0, -1.0])
     h = torch.tensor([1.0, 1.0, 0.0])
     inp = torch.zeros(1)
     x_next, _ = mrnn(inp.unsqueeze(0).unsqueeze(0), x.unsqueeze(0))
     x_next = x_next.squeeze()
     dx = torch.where(x_next > 0, 1.0, 0.0)
-    jac, jac_inp = lin.jacobian(inp, x, dh=True, alpha_scaling=True)
+    lin = mLinearization(mrnn, inp, x, "r2", dh=True, alpha_scaling=True)
+    jac, jac_inp = lin.jacobian, lin.jacobian_inp
     assert torch.allclose(
         jac,
         mrnn.get_weight_subset("r2", W=torch.diag(dx) @ (mrnn.alpha * mrnn.W_rec)),
@@ -167,9 +167,11 @@ def test_jacobian_matches_weight_h_r2_l():
 def test_eigendecomposition_returns_real_imag_parts_l():
     """Eigen decomposition returns real/imag parts and eigenvectors."""
     mrnn = _build_leaky_mrnn_with_inputs()
-    lin = mLinearization(mrnn)
     x = torch.zeros(3)
-    reals, ims, vecs = lin.eigendecomposition(torch.zeros(1), x)
+    lin = mLinearization(mrnn, torch.zeros(1), x)
+    reals, ims, vecs = (
+        lin.jac_rec_real_eigs, lin.jac_rec_im_eigs, lin.jac_rec_eigvecs
+    )
     # Eigenvectors are returned column-wise for a square matrix.
     assert vecs.shape == (3, 3)
     assert len(reals) == 3
@@ -177,11 +179,10 @@ def test_eigendecomposition_returns_real_imag_parts_l():
 
 
 def test_jacobian_requires_1d_x_l():
-    """jacobian() asserts on non-1D inputs to avoid shape ambiguity."""
+    """Construction asserts on non-1D inputs to avoid shape ambiguity."""
     mrnn = _build_leaky_mrnn_with_inputs()
-    lin = mLinearization(mrnn)
     with pytest.raises(AssertionError):
-        lin.jacobian(torch.zeros(1, 1), torch.zeros(1, 2))
+        mLinearization(mrnn, torch.zeros(1, 1), torch.zeros(1, 2))
 
 
 # -------------- Testing elman mRNN --------------------
@@ -190,10 +191,10 @@ def test_jacobian_requires_1d_x_l():
 def test_linear_jacobian_matches_weight_e():
     """Linear activation yields Jacobian equal to W_rec (scaled by alpha)."""
     mrnn = _build_elman_mrnn_with_inputs(activation="linear")
-    lin = mLinearization(mrnn)
     x = torch.zeros(3)
     inp = torch.zeros(1)
-    jac, jac_inp = lin.jacobian(inp, x)
+    lin = mLinearization(mrnn, inp, x)
+    jac, jac_inp = lin.jacobian, lin.jacobian_inp
     assert torch.allclose(jac, mrnn.W_rec)
     assert torch.allclose(jac_inp, mrnn.W_inp)
 
@@ -201,13 +202,13 @@ def test_linear_jacobian_matches_weight_e():
 def test_jacobian_matches_weight_r1_e():
     """Linear activation yields Jacobian equal to W_rec (scaled by alpha)."""
     mrnn = _build_elman_mrnn_with_inputs(activation="relu")
-    lin = mLinearization(mrnn, "r1")
     h = torch.tensor([1.0, 1.0, -1.0])
     inp = torch.zeros(1)
     h_next = mrnn(inp.unsqueeze(0).unsqueeze(0), h.unsqueeze(0))
     h_next = h_next.squeeze()
     dh = torch.where(h_next > 0, 1.0, 0.0)
-    jac, jac_inp = lin.jacobian(inp, h)
+    lin = mLinearization(mrnn, inp, h, "r1")
+    jac, jac_inp = lin.jacobian, lin.jacobian_inp
     assert torch.allclose(
         jac, mrnn.get_weight_subset("r1", W=torch.diag(dh) @ mrnn.W_rec)
     )
@@ -217,13 +218,13 @@ def test_jacobian_matches_weight_r1_e():
 def test_jacobian_matches_weight_r2_e():
     """Linear activation yields Jacobian equal to W_rec (scaled by alpha)."""
     mrnn = _build_elman_mrnn_with_inputs(activation="relu")
-    lin = mLinearization(mrnn, "r2")
     h = torch.tensor([1.0, 1.0, -1.0])
     inp = torch.zeros(1)
     h_next = mrnn(inp.unsqueeze(0).unsqueeze(0), h.unsqueeze(0))
     h_next = h_next.squeeze()
     dh = torch.where(h_next > 0, 1.0, 0.0)
-    jac, jac_inp = lin.jacobian(inp, h)
+    lin = mLinearization(mrnn, inp, h, "r2")
+    jac, jac_inp = lin.jacobian, lin.jacobian_inp
     assert torch.allclose(
         jac, mrnn.get_weight_subset("r2", W=torch.diag(dh) @ mrnn.W_rec)
     )
@@ -233,9 +234,11 @@ def test_jacobian_matches_weight_r2_e():
 def test_eigendecomposition_returns_real_imag_parts_e():
     """Eigen decomposition returns real/imag parts and eigenvectors."""
     mrnn = _build_elman_mrnn_with_inputs()
-    lin = mLinearization(mrnn)
     x = torch.zeros(3)
-    reals, ims, vecs = lin.eigendecomposition(torch.zeros(1), x)
+    lin = mLinearization(mrnn, torch.zeros(1), x)
+    reals, ims, vecs = (
+        lin.jac_rec_real_eigs, lin.jac_rec_im_eigs, lin.jac_rec_eigvecs
+    )
     # Eigenvectors are returned column-wise for a square matrix.
     assert vecs.shape == (3, 3)
     assert len(reals) == 3
@@ -243,11 +246,10 @@ def test_eigendecomposition_returns_real_imag_parts_e():
 
 
 def test_jacobian_requires_1d_x_e():
-    """jacobian() asserts on non-1D inputs to avoid shape ambiguity."""
+    """Construction asserts on non-1D inputs to avoid shape ambiguity."""
     mrnn = _build_elman_mrnn_with_inputs()
-    lin = mLinearization(mrnn)
     with pytest.raises(AssertionError):
-        lin.jacobian(torch.zeros(1, 1), torch.zeros(1, 2))
+        mLinearization(mrnn, torch.zeros(1, 1), torch.zeros(1, 2))
 
 
 @pytest.mark.parametrize("model_type", [mRNN, ElmanmRNN])
@@ -262,7 +264,6 @@ def test_shared_linearization_matches_native_jacobian(model_type, batch_first, a
     )
     rnn = builder(activation="tanh")
     rnn.batch_first = batch_first
-    lin = mLinearization(rnn)
     state = torch.tensor([0.4, -0.2, 0.1])
     inp = torch.tensor([0.3])
     dh = activity_mode and model_type is mRNN
@@ -289,37 +290,38 @@ def test_shared_linearization_matches_native_jacobian(model_type, batch_first, a
     expected_input, expected_state = torch.autograd.functional.jacobian(
         native_update, (inp, variable)
     )
-    jac, jac_input = lin.jacobian(inp, state, stim_input=stim, dh=dh, alpha_scaling=True)
+    lin = mLinearization(rnn, inp, state, stim_input=stim, dh=dh, alpha_scaling=True)
+    jac, jac_input = lin.jacobian, lin.jacobian_inp
     torch.testing.assert_close(jac, expected_state)
     torch.testing.assert_close(jac_input, expected_input)
     torch.testing.assert_close(
-        lin(inp, state, torch.zeros_like(inp), torch.zeros_like(state),
-            stim_input=stim, dh=dh, x_is_h=x_is_h, alpha_scaling=True),
+        lin(torch.zeros_like(inp), torch.zeros_like(state), x_is_h=x_is_h),
         native_update(inp, forward_variable),
     )
-    subset = mLinearization(rnn, "r1")
-    excluded, _ = subset.jacobian(
-        inp, state, stim_input=stim, dh=dh, excluded_regions=True, alpha_scaling=True
+    subset = mLinearization(
+        rnn, inp, state, "r1", stim_input=stim, dh=dh, alpha_scaling=True
     )
+    excluded = subset.jacobian_exc
     torch.testing.assert_close(excluded, expected_state[:2, 2:])
     delta = torch.tensor([0.01, -0.02, 0.03])
     delta_input = torch.tensor([0.02])
     torch.testing.assert_close(
         subset.forward(
-            inp, state, delta_input, delta[:2], delta_state_static=delta[2:],
-            stim_input=stim, dh=dh, x_is_h=x_is_h, alpha_scaling=True,
+            delta_input, delta[:2], delta_state_static=delta[2:],
+            x_is_h=x_is_h,
         ),
         (native_update(inp, forward_variable) + expected_state @ delta
          + expected_input @ delta_input)[:2],
     )
-    reals, imags, vectors = lin.eigendecomposition(
-        inp, state, stim_input=stim, dh=dh, alpha_scaling=True
+    reals, imags, vectors = (
+        lin.jac_rec_real_eigs, lin.jac_rec_im_eigs, lin.jac_rec_eigvecs
     )
     torch.testing.assert_close(
         expected_state.to(vectors.dtype) @ vectors,
         vectors * torch.complex(reals, imags),
     )
     if dh:
-        normalized, normalized_input = lin.jacobian(inp, state, stim_input=stim, dh=True)
+        normalized_lin = mLinearization(rnn, inp, state, stim_input=stim, dh=True)
+        normalized, normalized_input = normalized_lin.jacobian, normalized_lin.jacobian_inp
         torch.testing.assert_close(normalized, expected_state / rnn.alpha)
         torch.testing.assert_close(normalized_input, expected_input / rnn.alpha)
